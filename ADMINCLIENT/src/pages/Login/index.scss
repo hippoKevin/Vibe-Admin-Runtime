@@ -1,0 +1,163 @@
+.container {
+    width: 100vw;
+    height: 100vh;
+    background-color: #EDF2FA;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    position: relative;
+    overflow: hidden;
+
+    .left,
+    .right {
+        position: relative;
+        z-index: 1;
+    }
+
+    /* ==================== 装饰小卡片 ==================== */
+    .decor-card {
+        position: absolute;
+        z-index: 0;
+        border-radius: 0;
+        border: 1px solid rgba(255, 255, 255, 0.55);
+        box-shadow: 0 12px 32px rgba(84, 120, 190, 0.12);
+        transform: rotate(45deg);
+        animation: decor-card-float 9s ease-in-out infinite;
+    }
+
+    /* 四个角落：透明浅蓝渐变菱形，部分超出视口被裁切 */
+    .decor-card--1 {
+        top: -70px;
+        left: -70px;
+        width: 130px;
+        height: 130px;
+        background: linear-gradient(135deg, rgba(178, 208, 255, 0.85) 0%, rgba(178, 208, 255, 0.12) 100%);
+        animation-delay: 0s;
+    }
+
+    .decor-card--2 {
+        top: -60px;
+        right: -60px;
+        width: 140px;
+        height: 140px;
+        background: linear-gradient(200deg, rgba(168, 200, 255, 0.8) 0%, rgba(168, 200, 255, 0.1) 100%);
+        animation-delay: 1.3s;
+    }
+
+    .decor-card--3 {
+        bottom: -70px;
+        left: -70px;
+        width: 120px;
+        height: 120px;
+        background: linear-gradient(30deg, rgba(190, 215, 255, 0.75) 0%, rgba(190, 215, 255, 0.1) 100%);
+        animation-delay: 2.2s;
+    }
+
+    .decor-card--4 {
+        bottom: -60px;
+        right: -60px;
+        width: 150px;
+        height: 150px;
+        background: linear-gradient(160deg, rgba(172, 204, 255, 0.8) 0%, rgba(172, 204, 255, 0.12) 100%);
+        animation-delay: 0.7s;
+    }
+
+    /* 边角内侧的辅助小菱形 */
+    .decor-card--5 {
+        top: 12%;
+        right: 10%;
+        width: 90px;
+        height: 90px;
+        background: linear-gradient(135deg, rgba(200, 222, 255, 0.6) 0%, rgba(200, 222, 255, 0.08) 100%);
+        animation-delay: 1.8s;
+    }
+
+    .decor-card--6 {
+        bottom: 16%;
+        left: 10%;
+        width: 100px;
+        height: 100px;
+        background: linear-gradient(200deg, rgba(188, 214, 255, 0.6) 0%, rgba(188, 214, 255, 0.08) 100%);
+        animation-delay: 2.6s;
+    }
+
+    .left {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 30px;
+       
+        .logo {
+            display: flex;
+            align-items:flex-start;
+            gap: 40px;
+            
+            img {
+                width: 60px;
+            }
+
+            span {
+                font-size: 36px;
+                font-weight: bold;
+            }
+        }
+
+        .background {
+            position: relative;
+            animation: background-float 6s ease-in-out infinite;
+
+            img {
+                width: 650px;
+                display: block;
+            }
+        }
+    }
+
+    .right {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+.login-box {
+            width: 450px;
+            background-color: rgba(255, 255, 255, 0.7);
+            box-shadow: 0 0 3px rgba(0, 0, 0, 0.1);
+            border-radius: 5px;
+            padding: 40px;
+        }
+    }
+}
+
+.container:deep(.t-input) {
+    border-radius: 20px;
+}
+
+:deep(.t-form__controls) {
+    margin-left: 0 !important;
+}
+
+.login-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: -12px;
+}
+
+/* 左侧插画整体上下浮动 */
+@keyframes background-float {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-5px);
+    }
+}
+
+/* 装饰菱形：旋转 45° 并缓慢上下浮动 */
+@keyframes decor-card-float {
+    0%, 100% {
+        transform: rotate(45deg) translateY(0);
+    }
+    50% {
+        transform: rotate(45deg) translateY(-10px);
+    }
+}

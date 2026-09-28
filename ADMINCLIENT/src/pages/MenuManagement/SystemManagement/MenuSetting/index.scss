@@ -1,0 +1,50 @@
+.column-editor {
+    .column-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+  
+    .column-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--td-border-level-2-color);
+      background: var(--td-bg-color-container);
+      transition: background 0.2s;
+  
+      &:not(.is-fixed) {
+        cursor: grab;
+        &:hover { background: var(--td-bg-color-container-hover); }
+        &:active { cursor: grabbing; }
+      }
+  
+      &.is-fixed {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+  
+      .drag-handle {
+        color: var(--td-text-color-placeholder);
+        display: flex;
+        align-items: center;
+      }
+  
+      .drag-placeholder {
+        width: 16px;
+      }
+  
+      .col-title {
+        flex: 1;
+        font-size: 14px;
+        color: var(--td-text-color-primary);
+      }
+    }
+  }
+
+.container {
+    min-height: calc(100vh - 120px);
+}
+

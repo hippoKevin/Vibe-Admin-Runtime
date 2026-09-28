@@ -1,0 +1,54 @@
+[
+  {
+    "user_id": 5,
+    "account": "admin",
+    "password": "admin",
+    "username": "管理员",
+    "email": "admin@example.com",
+    "phone_number": "13800000000",
+    "role_id": 1,
+    "role_name": "管理员",
+    "gender": 1,
+    "created_at": "2026-04-22 21:11:28",
+    "updated_at": "2026-08-13 14:36:37"
+  },
+  {
+    "user_id": 6,
+    "account": "viewer",
+    "password": "",
+    "username": "演示账号",
+    "email": "viewer@example.com",
+    "phone_number": "13900000000",
+    "role_id": 16,
+    "role_name": "观赏",
+    "gender": 0,
+    "created_at": "2026-06-26 17:25:27",
+    "updated_at": "2026-06-26 17:25:27"
+  },
+  {
+    "user_id": 7,
+    "account": "zhangsan",
+    "password": "",
+    "username": "张三",
+    "email": "zhangsan@example.com",
+    "phone_number": "13700000001",
+    "role_id": 1,
+    "role_name": "管理员",
+    "gender": 1,
+    "created_at": "2026-05-12 09:30:00",
+    "updated_at": "2026-07-01 10:00:00"
+  },
+  {
+    "user_id": 8,
+    "account": "lisi",
+    "password": "",
+    "username": "李四",
+    "email": "lisi@example.com",
+    "phone_number": "13600000002",
+    "role_id": 16,
+    "role_name": "观赏",
+    "gender": 2,
+    "created_at": "2026-05-20 14:20:00",
+    "updated_at": "2026-07-05 11:30:00"
+  }
+]

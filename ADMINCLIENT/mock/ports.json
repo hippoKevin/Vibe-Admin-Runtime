@@ -1,0 +1,332 @@
+[
+  {
+    "port_id": 1,
+    "port_name": "登录",
+    "port_method": "POST",
+    "port_address": "common/login",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 2,
+    "port_name": "刷新Token",
+    "port_method": "POST",
+    "port_address": "common/refresh_token",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 3,
+    "port_name": "恢复默认",
+    "port_method": "POST",
+    "port_address": "common/refresh_default",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 10,
+    "port_name": "用户列表",
+    "port_method": "GET",
+    "port_address": "user/list",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 11,
+    "port_name": "新增用户",
+    "port_method": "POST",
+    "port_address": "user/add",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 12,
+    "port_name": "用户信息",
+    "port_method": "GET",
+    "port_address": "user/:userId/info",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 13,
+    "port_name": "修改密码",
+    "port_method": "POST",
+    "port_address": "user/:userId/changePassword",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 14,
+    "port_name": "修改用户",
+    "port_method": "POST",
+    "port_address": "user/:userId/update",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 15,
+    "port_name": "删除用户",
+    "port_method": "POST",
+    "port_address": "user/:userId/delete",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 20,
+    "port_name": "角色列表",
+    "port_method": "GET",
+    "port_address": "role/list",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 21,
+    "port_name": "新增角色",
+    "port_method": "POST",
+    "port_address": "role/add",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 22,
+    "port_name": "角色详情",
+    "port_method": "GET",
+    "port_address": "role/:role_id",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 23,
+    "port_name": "删除角色",
+    "port_method": "POST",
+    "port_address": "role/delete/:roleId",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 24,
+    "port_name": "修改角色",
+    "port_method": "POST",
+    "port_address": "role/update/:role_id",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 25,
+    "port_name": "角色权限",
+    "port_method": "GET",
+    "port_address": "role/auth/:role_id",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 26,
+    "port_name": "配置角色权限",
+    "port_method": "POST",
+    "port_address": "role/auth/config/:role_id",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 30,
+    "port_name": "菜单列表",
+    "port_method": "GET",
+    "port_address": "menu/list",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 31,
+    "port_name": "新增菜单",
+    "port_method": "POST",
+    "port_address": "menu/addMenu",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 32,
+    "port_name": "删除菜单",
+    "port_method": "GET",
+    "port_address": "menu/delete",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 33,
+    "port_name": "修改菜单",
+    "port_method": "POST",
+    "port_address": "menu/updateMenu",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 34,
+    "port_name": "菜单详情",
+    "port_method": "GET",
+    "port_address": "menu/getMenuById",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 35,
+    "port_name": "操作列表",
+    "port_method": "GET",
+    "port_address": "menu/getOperationList",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 36,
+    "port_name": "新增操作",
+    "port_method": "POST",
+    "port_address": "menu/addOperation",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 37,
+    "port_name": "删除操作",
+    "port_method": "GET",
+    "port_address": "menu/deleteOperation",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 40,
+    "port_name": "导入历史",
+    "port_method": "GET",
+    "port_address": "excel/importhistory/list",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 41,
+    "port_name": "清空导入历史",
+    "port_method": "GET",
+    "port_address": "excel/clearHistory",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 42,
+    "port_name": "Excel导入",
+    "port_method": "POST",
+    "port_address": "excel/import/:menu_id",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 43,
+    "port_name": "批量导入",
+    "port_method": "POST",
+    "port_address": "excel/batch-import",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 50,
+    "port_name": "列模板列表",
+    "port_method": "GET",
+    "port_address": "menu/status/list",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 51,
+    "port_name": "保存列模板",
+    "port_method": "POST",
+    "port_address": "menu/status/save",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 52,
+    "port_name": "修改列模板",
+    "port_method": "POST",
+    "port_address": "menu/status/update/:menu_status_id",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 53,
+    "port_name": "删除列模板",
+    "port_method": "POST",
+    "port_address": "menu/status/delete/:menu_status_id",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  },
+  {
+    "port_id": 54,
+    "port_name": "菜单选项",
+    "port_method": "GET",
+    "port_address": "menu/options/:user_id",
+    "port_type": 1,
+    "parent_id": 0,
+    "created_at": "2026-01-01 00:00:00",
+    "updated_at": "2026-01-01 00:00:00"
+  }
+]

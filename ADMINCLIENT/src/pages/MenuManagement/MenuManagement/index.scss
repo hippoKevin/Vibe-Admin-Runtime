@@ -1,0 +1,10 @@
+.t-textarea {
+	width: 720px;
+}
+:deep(.t-table) {
+  font: var(--td-font-body-small);
+}
+
+:deep(.t-table) th {
+  font-weight: bold;
+}

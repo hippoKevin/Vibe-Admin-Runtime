@@ -1,0 +1,55 @@
+@import "./scrollbar.less";
+
+html,body {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    color: #333;
+}
+
+/* ==================== 明暗模式切换转场（View Transitions） ==================== */
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation-duration: 1.2s;
+    animation-timing-function: ease-in-out;
+    animation-fill-mode: both;
+}
+
+/* 白天 → 黑夜：旧主题从左侧被揭掉，暗色新主题从左往右揭入 */
+html.theme-sweep-to-dark::view-transition-old(root) {
+    animation-name: theme-sweep-old-left;
+}
+
+html.theme-sweep-to-dark::view-transition-new(root) {
+    animation-name: theme-sweep-new-left;
+}
+
+/* 黑夜 → 白天：旧主题从右侧被揭掉，亮色新主题从右往左揭入 */
+html.theme-sweep-to-light::view-transition-old(root) {
+    animation-name: theme-sweep-old-right;
+}
+
+html.theme-sweep-to-light::view-transition-new(root) {
+    animation-name: theme-sweep-new-right;
+}
+
+/* 斜边线：X 轴偏移 14vh，视觉倾角约 8° */
+@keyframes theme-sweep-old-left {
+    from { clip-path: polygon(0% 0, 100% 0, 100% 100%, calc(0% - 14vh) 100%); }
+    to   { clip-path: polygon(150% 0, 100% 0, 100% 100%, calc(150% - 14vh) 100%); }
+}
+
+@keyframes theme-sweep-new-left {
+    from { clip-path: polygon(0% 0, 0% 0, calc(0% - 14vh) 100%, 0% 100%); }
+    to   { clip-path: polygon(0% 0, 150% 0, calc(150% - 14vh) 100%, 0% 100%); }
+}
+
+@keyframes theme-sweep-old-right {
+    from { clip-path: polygon(0% 0, 100% 0, calc(100% + 14vh) 100%, 0% 100%); }
+    to   { clip-path: polygon(0% 0, -80% 0, calc(-80% + 14vh) 100%, 0% 100%); }
+}
+
+@keyframes theme-sweep-new-right {
+    from { clip-path: polygon(100% 0, 100% 0, calc(100% + 14vh) 100%, 100% 100%); }
+    to   { clip-path: polygon(-80% 0, 100% 0, 100% 100%, calc(-80% + 14vh) 100%); }
+}

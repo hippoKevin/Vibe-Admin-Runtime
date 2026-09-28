@@ -1,0 +1,182 @@
+[
+  {
+    "operation_id": 74,
+    "operation_name": "清空导入历史",
+    "operation_port": "excel/clearHistory",
+    "operation_method": "GET",
+    "created_at": "2026-05-27 14:43:56.678978",
+    "updated_at": "2026-05-27 14:43:56.678978",
+    "operation_sign": "DataImport.clearImportHistory",
+    "menu_id": 96
+  },
+  {
+    "operation_id": 75,
+    "operation_name": "导入",
+    "operation_port": "excel/import/:menu_id",
+    "operation_method": "POST",
+    "created_at": "2026-05-27 14:46:29.980470",
+    "updated_at": "2026-05-27 14:46:29.980470",
+    "operation_sign": "DataImport.importExcel",
+    "menu_id": 96
+  },
+  {
+    "operation_id": 77,
+    "operation_name": "批量导入",
+    "operation_port": "execl/batch-import",
+    "operation_method": "POST",
+    "created_at": "2026-05-27 15:04:46.537922",
+    "updated_at": "2026-05-27 15:04:46.537922",
+    "operation_sign": "DataImport.batchImportExcel",
+    "menu_id": 96
+  },
+  {
+    "operation_id": 78,
+    "operation_name": "添加角色",
+    "operation_port": "",
+    "operation_method": "",
+    "created_at": "2026-06-11 20:11:25.444222",
+    "updated_at": "2026-06-11 20:11:25.444222",
+    "operation_sign": "AuthAdminPage.add",
+    "menu_id": 17
+  },
+  {
+    "operation_id": 79,
+    "operation_name": "修改角色",
+    "operation_port": "",
+    "operation_method": "",
+    "created_at": "2026-06-11 20:12:41.638444",
+    "updated_at": "2026-06-11 20:12:41.638444",
+    "operation_sign": "AuthAdminPage.update",
+    "menu_id": 17
+  },
+  {
+    "operation_id": 80,
+    "operation_name": "权限配置",
+    "operation_port": "",
+    "operation_method": "",
+    "created_at": "2026-06-11 20:12:53.746006",
+    "updated_at": "2026-06-11 20:12:53.746006",
+    "operation_sign": "AuthAdminPage.setAuth",
+    "menu_id": 17
+  },
+  {
+    "operation_id": 81,
+    "operation_name": "删除角色",
+    "operation_port": "",
+    "operation_method": "",
+    "created_at": "2026-06-11 20:13:02.052463",
+    "updated_at": "2026-06-11 20:13:02.052463",
+    "operation_sign": "AuthAdminPage.delete",
+    "menu_id": 17
+  },
+  {
+    "operation_id": 82,
+    "operation_name": "添加用户",
+    "operation_port": "",
+    "operation_method": "",
+    "created_at": "2026-06-11 20:13:31.751806",
+    "updated_at": "2026-06-11 20:13:31.751806",
+    "operation_sign": "UserAdminPage.add",
+    "menu_id": 16
+  },
+  {
+    "operation_id": 83,
+    "operation_name": "修改用户",
+    "operation_port": "",
+    "operation_method": "",
+    "created_at": "2026-06-11 20:13:44.402710",
+    "updated_at": "2026-06-11 20:13:44.402710",
+    "operation_sign": "UserAdminPage.update",
+    "menu_id": 16
+  },
+  {
+    "operation_id": 84,
+    "operation_name": "删除用户",
+    "operation_port": "",
+    "operation_method": "",
+    "created_at": "2026-06-11 20:13:52.437042",
+    "updated_at": "2026-06-11 20:13:52.437042",
+    "operation_sign": "UserAdminPage.delete",
+    "menu_id": 16
+  },
+  {
+    "operation_id": 85,
+    "operation_name": "添加菜单",
+    "operation_port": "",
+    "operation_method": "",
+    "created_at": "2026-06-11 20:14:18.747291",
+    "updated_at": "2026-06-11 20:14:18.747291",
+    "operation_sign": "MenuManagement.add",
+    "menu_id": 2
+  },
+  {
+    "operation_id": 86,
+    "operation_name": "修改菜单",
+    "operation_port": "",
+    "operation_method": "",
+    "created_at": "2026-06-11 20:14:52.244703",
+    "updated_at": "2026-06-11 20:14:52.244703",
+    "operation_sign": "MenuManagement.update",
+    "menu_id": 2
+  },
+  {
+    "operation_id": 87,
+    "operation_name": "删除菜单",
+    "operation_port": "",
+    "operation_method": "",
+    "created_at": "2026-06-11 20:15:00.127967",
+    "updated_at": "2026-06-11 20:15:00.127967",
+    "operation_sign": "MenuManagement.delete",
+    "menu_id": 2
+  },
+  {
+    "operation_id": 88,
+    "operation_name": "添加操作",
+    "operation_port": "",
+    "operation_method": "",
+    "created_at": "2026-06-11 20:15:45.590676",
+    "updated_at": "2026-06-11 20:15:45.590676",
+    "operation_sign": "MenuManagement.addOperation",
+    "menu_id": 2
+  },
+  {
+    "operation_id": 89,
+    "operation_name": "删除操作",
+    "operation_port": "",
+    "operation_method": "",
+    "created_at": "2026-06-11 20:16:01.259409",
+    "updated_at": "2026-06-11 20:16:01.259409",
+    "operation_sign": "MenuManagement.deleteOperation",
+    "menu_id": 2
+  },
+  {
+    "operation_id": 90,
+    "operation_name": "添加菜单配置",
+    "operation_port": "",
+    "operation_method": "",
+    "created_at": "2026-06-11 20:16:46.511066",
+    "updated_at": "2026-06-11 20:16:46.511066",
+    "operation_sign": "MenuSetting.add",
+    "menu_id": 108
+  },
+  {
+    "operation_id": 91,
+    "operation_name": "修改菜单配置",
+    "operation_port": "",
+    "operation_method": "",
+    "created_at": "2026-06-11 20:16:56.026079",
+    "updated_at": "2026-06-11 20:16:56.026079",
+    "operation_sign": "MenuSetting.update",
+    "menu_id": 108
+  },
+  {
+    "operation_id": 92,
+    "operation_name": "删除菜单配置",
+    "operation_port": "",
+    "operation_method": "",
+    "created_at": "2026-06-11 20:17:03.891713",
+    "updated_at": "2026-06-11 20:17:03.891713",
+    "operation_sign": "MenuSetting.delete",
+    "menu_id": 108
+  }
+]

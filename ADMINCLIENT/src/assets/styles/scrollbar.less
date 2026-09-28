@@ -1,0 +1,21 @@
+/* 
+ * 统一滚动样式(不需要单独引入 已经挂到全局中了)
+ * 需要给滚动容器添加scrollbar类名
+ * 例如：<div class="scrollbar">...</div>
+ */
+
+.scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar::-webkit-scrollbar-thumb {
+  border: 0px solid transparent;
+  background-clip: content-box;
+  background-color: var(--td-scrollbar-color);
+  border-radius: 11px;
+}
+
+.scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--td-scrollbar-hover-color);
+}

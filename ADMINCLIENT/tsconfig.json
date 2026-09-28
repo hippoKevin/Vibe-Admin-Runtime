@@ -1,0 +1,22 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./tsconfig.node.json"
+    },
+    {
+      "path": "./tsconfig.app.json"
+    }
+  ],
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    },
+    "strict": false, // 禁用所有严格类型检查（包括 noImplicitAny）
+    "noImplicitAny": false, // 允许隐式 any 类型（默认是 true，即禁止）
+    "skipLibCheck": true, // 跳过对类型声明文件的检查（减少 any 警告）
+    "allowJs": true,
+    "checkJs": false // 不检查JavaScript文件中的类型错误
+  }
+}

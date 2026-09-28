@@ -1,0 +1,111 @@
+
+.t-dialog__header-content {
+    justify-content: left !important;
+}
+
+/* ── Dialog ─────────────────────────────────── */
+.t-dialog {
+    border: none !important;
+}
+
+.t-dialog__wrap {
+    overflow: hidden !important;
+}
+
+.t-dialog__body {
+    overflow: hidden;
+    padding: 0;
+}
+
+.t-dialog__wrap .t-dialog__body {
+    // max-height: 60vh;
+    overflow-y: auto;
+}
+
+// 全屏防溢出
+.t-dialog__wrap .t-dialog__body--fullscreen--without-footer {
+    max-height: 100vh;
+}
+
+.t-dialog__header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.t-dialog__fullscreen .t-dialog__header--fullscreen {
+    padding: 0;
+}
+
+.t-dialog__header .t-icon:not(.t-icon-close) {
+    margin-right: 0 !important;
+}
+
+.t-dialog__header--fullscreen > .t-dialog__close {
+    margin-right: var(--td-comp-paddingLR-xxl);
+}
+
+.dialog-body {
+    padding: 20px 0;
+    overflow-y: auto;
+}
+
+.t-dialog__body--fullscreen--without-footer > .dialog-body{
+    padding: 20px;
+}
+
+.t-dialog__wrap .t-dialog__body--fullscreen--without-footer {
+    max-height: calc(100vh - 56px);
+}
+
+.dialog-header {
+    padding: 0 var(--td-comp-paddingLR-xxl);
+}
+
+// .t-input__wrap,
+// .t-input_inner
+//  {
+//     min-width: 120px;
+// }
+/***
+* t-space spearate
+*/
+
+.t-space-item-separator {
+    opacity: 0.3;
+}
+
+.t-textarea {
+	width: 720px;
+}
+.t-table {
+  font: var(--td-font-body-small);
+}
+
+.t-table th {
+  font-weight: bold;
+}
+
+/***
+* t-table border
+*/
+
+// :root {
+//     --td-component-border: rgba(0,0,0,0.25);
+// }
+
+.t-table--bordered .t-table__content {
+    border: 2px solid var(--td-component-border);
+}
+
+.t-table--bordered td, .t-table--bordered th {
+    border-left: 2px solid var(--td-component-border);
+}
+
+.t-table th, .t-table td {
+    border-bottom: 2px solid var(--td-component-border);
+}
+
+.t-table__footer, .t-table__header.t-table__header--fixed {
+    z-index: 30;
+}
