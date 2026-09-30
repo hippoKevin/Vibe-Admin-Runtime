@@ -36,33 +36,4 @@ function toggleLocale() {
 }
 </script>
 
-<style scoped>
-.lang-label {
-  font-size: calc(12px * var(--app-font-scale, 1));
-  font-weight: 600;
-  margin-left: 2px;
-}
-
-.swichLanguageButton {
-  cursor: pointer;
-  border-radius: 2px;
-  padding: 0 8px;
-
-  transition: all 0.5s;
-  &:hover {
-    background-color: rgb(225, 225, 225);
-  }
-}
-
-.swichLanguageButtonLogin {
-  cursor: pointer;
-  border-radius: 2px;
-  padding: 0 10px 4px 10px;
-  margin-top: 10px;
-
-  transition: all 0.5s;
-  &:hover {
-    background-color: rgb(225, 225, 225);
-  }
-}
-</style>
+<style lang="scss" scoped>@import url("./index.scss");</style>

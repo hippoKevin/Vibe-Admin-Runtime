@@ -486,6 +486,4 @@ function changeTable(info: any, context: any) {
 }
 </script>
 
-<style lang="scss" scoped>
-  @import url("index.scss");
-</style>
+<style lang="scss" scoped>@import url("./index.scss");</style>

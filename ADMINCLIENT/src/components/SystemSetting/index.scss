@@ -1,0 +1,121 @@
+
+/* ===== 由 index.vue 提取 ===== */
+.setting-container {
+    padding: 20px;
+}
+
+.mb16 {
+    margin-bottom: 16px;
+}
+
+.dialog-header {
+    font-size: calc(18px * var(--app-font-scale, 1));
+    font-weight: 600;
+}
+
+.card-title {
+    font-size: calc(15px * var(--app-font-scale, 1));
+    font-weight: 600;
+}
+
+/* 系统信息 */
+.info-main {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.sys-name {
+    font-size: calc(20px * var(--app-font-scale, 1));
+    font-weight: 600;
+    color: var(--td-text-color-primary);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.sys-desc {
+    font-size: calc(13px * var(--app-font-scale, 1));
+    color: var(--td-text-color-secondary);
+    line-height: 1.6;
+}
+
+/* 关于我们 */
+.about-main {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
+.about-info {
+    flex: 1;
+    min-width: 260px;
+}
+
+.about-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: calc(14px * var(--app-font-scale, 1));
+    line-height: 30px;
+}
+
+.about-label {
+    color: var(--td-text-color-secondary);
+    min-width: 72px;
+}
+
+.about-value {
+    color: var(--td-text-color-primary);
+    font-weight: 500;
+}
+
+.about-desc {
+    margin: 10px 0 14px;
+    font-size: calc(13px * var(--app-font-scale, 1));
+    line-height: 1.8;
+    color: var(--td-text-color-secondary);
+}
+
+.about-links {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.about-link {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 14px;
+    border-radius: var(--td-radius-default);
+    background: var(--td-brand-color-1);
+    color: var(--td-brand-color);
+    font-size: calc(13px * var(--app-font-scale, 1));
+    text-decoration: none;
+    transition: opacity 0.2s;
+
+    &:hover {
+        opacity: 0.85;
+    }
+}
+
+.about-qr {
+    flex-shrink: 0;
+    text-align: center;
+}
+
+.qr-img {
+    width: 150px;
+    height: 150px;
+    border-radius: var(--td-radius-medium);
+    border: 1px solid var(--td-component-stroke);
+    object-fit: contain;
+    background: #fff;
+}
+
+.qr-tip {
+    margin-top: 8px;
+    font-size: calc(12px * var(--app-font-scale, 1));
+    color: var(--td-text-color-secondary);
+}

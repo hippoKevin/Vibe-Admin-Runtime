@@ -125,34 +125,4 @@
     })
 </script>
 
-<style scoped lang="scss">
-.side-nav {
-    position: relative;
-}
-
-.side-nav__resizer {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: 7px;
-    z-index: 10;
-    cursor: col-resize;
-
-    &::after {
-        content: '';
-        position: absolute;
-        top: 0;
-        bottom: 0;
-        right: 3px;
-        width: 2px;
-        background-color: transparent;
-        transition: background-color 0.2s ease;
-    }
-
-    &:hover::after,
-    &:active::after {
-        background-color: var(--td-brand-color);
-    }
-}
-</style>
+<style lang="scss" scoped>@import url("./index.scss");</style>

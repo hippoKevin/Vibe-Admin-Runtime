@@ -636,9 +636,4 @@ defineExpose({
 
 </script>
 
-<style scoped>
-:global(#filterTable td) {
-  padding: 2px 2px !important;
-  border: none
-}
-</style>
+<style lang="scss" scoped>@import url("./index.scss");</style>

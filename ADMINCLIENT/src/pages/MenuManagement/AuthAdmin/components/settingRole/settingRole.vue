@@ -257,8 +257,4 @@ const translateAuthTree = (items: any[]): any[] => {
 }
 </script>
 
-<style scoped>
-    .container :deep(.t-tree__label.t-is-checked ) {
-        background-color: transparent !important;
-    }
-</style>
+<style lang="scss" scoped>@import url("./index.scss");</style>

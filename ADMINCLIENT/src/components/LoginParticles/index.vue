@@ -187,11 +187,4 @@ onBeforeUnmount(() => {
 })
 </script>
 
-<style scoped>
-.login-particles {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 1;
-}
-</style>
+<style lang="scss" scoped>@import url("./index.scss");</style>

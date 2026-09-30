@@ -103,8 +103,4 @@
     };
 </script>
 
-<style scoped>
-.layout-tabs :deep(.t-tabs__nav-item) {
-    height: 30px;
-}
-</style>
+<style lang="scss" scoped>@import url("./index.scss");</style>

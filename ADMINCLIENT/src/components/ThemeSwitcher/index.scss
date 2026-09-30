@@ -1,0 +1,77 @@
+/* ===== 由 index.vue 提取 ===== */
+.theme-config {
+  padding: 12px;
+}
+
+.theme-config__label {
+  font-size: calc(13px * var(--app-font-scale, 1));
+  color: var(--td-text-color-primary);
+  margin-bottom: 10px;
+}
+
+.theme-config__colors {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.theme-config__color {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  transition: box-shadow 0.2s;
+
+  &:hover {
+    box-shadow: 0 0 0 2px var(--td-bg-color-container), 0 0 0 4px var(--td-brand-color-light-active);
+  }
+}
+
+.theme-config__color--active {
+  box-shadow: 0 0 0 2px var(--td-bg-color-container), 0 0 0 4px var(--td-brand-color);
+}
+
+.theme-config__divider {
+  height: 1px;
+  background: var(--td-component-stroke);
+  margin: 12px 0;
+}
+
+.theme-config__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.theme-config__row-label {
+  font-size: calc(13px * var(--app-font-scale, 1));
+  color: var(--td-text-color-primary);
+}
+
+.theme-config__brightness {
+  margin-top: 2px;
+}
+
+.theme-config__brightness :deep(.t-slider) {
+  margin-top: 6px;
+}
+
+.theme-config__brightness-value {
+  font-size: calc(12px * var(--app-font-scale, 1));
+  color: var(--td-text-color-secondary);
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.2s;
+}
+
+.theme-config__brightness-value:hover {
+  color: var(--td-brand-color);
+}
+
+.theme-config__brightness-value--default {
+  color: var(--td-text-color-placeholder);
+}

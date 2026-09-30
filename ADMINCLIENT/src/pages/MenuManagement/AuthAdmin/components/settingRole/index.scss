@@ -1,0 +1,4 @@
+/* ===== 由 settingRole.vue 提取 ===== */
+.container :deep(.t-tree__label.t-is-checked ) {
+        background-color: transparent !important;
+    }

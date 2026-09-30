@@ -586,14 +586,4 @@ const translateMenuTree = (items: any[]): any[] => {
     @import url("./index.scss");
   </style>
 
-<style lang="scss">
-.t-select__list .t-select-option.t-is-disabled {
-  background: var(--td-brand-color-light) !important;
-  // color: var(--td-brand-color) !important;
-  font-weight: 500;
-  cursor: not-allowed;
-}
-.t-select__list .t-select-option.t-is-disabled:hover {
-  background-color: var(--td-brand-color-light) !important;
-}
-</style>
+<style lang="scss">@import url("./global.scss");</style>

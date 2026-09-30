@@ -255,19 +255,4 @@ defineExpose({
 
 </script>
 
-<style scoped>
-:deep(.t-table) th {
-  font-weight: bold;
-  color: var(--td-font-gray-1);
-}
-
-:deep(.t-table) td {
-  padding: 2px 2px !important;
-}
-
-:deep(.t-input__inner) {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-</style>
+<style lang="scss" scoped>@import url("./index.scss");</style>
