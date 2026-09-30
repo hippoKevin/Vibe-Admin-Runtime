@@ -49,6 +49,16 @@ export interface DevAgentRunResult {
     error?: string;
 }
 
+/** 一条执行历史（独立控制台的「执行过程」面板用） */
+export interface DevAgentRunRecord extends DevAgentRunResult {
+    id: string;
+    prompt: string;
+    startedAt: string;
+}
+
+/** 最多保留多少条执行历史（内存态，重启即清空） */
+const MAX_RUN_HISTORY = 20;
+
 /**
  * 开发模式服务：把一句话任务交给 DeepSeek Harness 执行
  *
@@ -66,6 +76,21 @@ export class DevAgentService {
 
     /** 最近一次执行结果 */
     private lastRun: DevAgentRunResult | null = null;
+
+    /** 执行历史（新的在前） */
+    private readonly runs: DevAgentRunRecord[] = [];
+
+    /**
+     * 执行历史：给独立控制台的「执行过程」面板用
+     */
+    getRuns() {
+        return {
+            running: this.running,
+            timeout: this.resolveTimeout(),
+            cwd: this.resolveCwd(),
+            items: this.runs,
+        };
+    }
 
     /**
      * 状态：前端据此判断「开发模式」是否可用
@@ -133,6 +158,14 @@ export class DevAgentService {
             };
 
             this.lastRun = result;
+            this.runs.unshift({
+                ...result,
+                id: String(startedAt),
+                prompt: dto.prompt,
+                startedAt: new Date(startedAt).toISOString(),
+            });
+            if (this.runs.length > MAX_RUN_HISTORY) this.runs.length = MAX_RUN_HISTORY;
+
             this.logger.log(
                 `开发模式任务结束：exit=${result.exitCode} 用时=${result.duration}ms 改动文件=${files.length}`,
             );

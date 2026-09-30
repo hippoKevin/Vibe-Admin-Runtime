@@ -1,0 +1,2065 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>开发模式控制台 · vibe-admin-runtime</title>
+<!--
+  开发模式 · 独立控制台
+  ------------------------------------------------------------------
+  刻意放在前端应用之外（由后端直接吐出本文件）：
+  Agent 一改前端代码就会触发 Vite 热更新甚至整页刷新，控制台如果跑在应用里，
+  每次生成都会被刷掉、开发模式被迫关闭。这里不经过 Vite、不参与 HMR。
+
+  纯原生 HTML/CSS/JS，无框架、无构建。
+  token 由主窗口通过 location.hash 传进来，所有接口都带上 Authorization。
+-->
+<style>
+  /* ===== 基础变量 ===== */
+  :root {
+    --ink: #1b2431;
+    --ink-soft: #5a6880;
+    --ink-faint: #8b97ab;
+    --line: rgba(27, 36, 49, 0.12);
+    --brand: #3b5bff;
+    --ok: #12a150;
+    --warn: #d98200;
+    --error: #d4380d;
+    --panel-alpha: 0.86;
+    --font-scale: 1;
+    --radius: 12px;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    overflow: hidden;
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    font-size: calc(13px * var(--font-scale));
+    background:
+      radial-gradient(circle at 16% 10%, #e9efff 0%, rgba(233, 239, 255, 0) 56%),
+      radial-gradient(circle at 84% 16%, #f6eaff 0%, rgba(246, 234, 255, 0) 52%),
+      radial-gradient(circle at 50% 104%, #e8f7ff 0%, rgba(232, 247, 255, 0) 62%),
+      #f6f8fc;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button {
+    font-family: inherit;
+    font-size: inherit;
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  /* ===== 浅色幕：整页一层浅色半透明幕 ===== */
+  .veil {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    background: rgba(255, 255, 255, 0.78);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    pointer-events: none;
+  }
+
+  /* ===== 球体神经网络画布（整屏、不接收鼠标事件） ===== */
+  .mesh {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    transition: opacity 520ms ease;
+  }
+
+  /* 执行中：球体消失，只剩向外释放的波纹 */
+  body.is-busy .mesh {
+    opacity: 0;
+  }
+
+  /* ===== 整屏向外释放的波纹（执行中） ===== */
+  .rings {
+    position: fixed;
+    inset: 0;
+    z-index: 3;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 420ms ease;
+  }
+
+  body.is-busy .rings {
+    opacity: 1;
+  }
+
+  .ring {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 160vmax;
+    height: 160vmax;
+    border: 3px solid rgba(59, 91, 255, 0.95);
+    border-radius: 50%;
+    box-shadow: 0 0 30px rgba(59, 91, 255, 0.5), inset 0 0 30px rgba(59, 91, 255, 0.3);
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.04);
+  }
+
+  body.is-busy .ring {
+    animation: ring-release 3.6s cubic-bezier(0.22, 0.58, 0.32, 1) infinite;
+  }
+
+  .ring--1 {
+    border-color: rgba(0, 176, 255, 0.95);
+    box-shadow: 0 0 30px rgba(0, 176, 255, 0.55), inset 0 0 30px rgba(0, 176, 255, 0.32);
+  }
+
+  .ring--2 {
+    border-color: rgba(112, 87, 255, 0.95);
+    box-shadow: 0 0 30px rgba(112, 87, 255, 0.55), inset 0 0 30px rgba(112, 87, 255, 0.32);
+    animation-delay: 0.9s;
+  }
+
+  .ring--3 {
+    border-color: rgba(255, 79, 176, 0.92);
+    box-shadow: 0 0 30px rgba(255, 79, 176, 0.5), inset 0 0 30px rgba(255, 79, 176, 0.3);
+    animation-delay: 1.8s;
+  }
+
+  .ring--4 {
+    border-color: rgba(0, 200, 170, 0.92);
+    box-shadow: 0 0 30px rgba(0, 200, 170, 0.5), inset 0 0 30px rgba(0, 200, 170, 0.3);
+    animation-delay: 2.7s;
+  }
+
+  @keyframes ring-release {
+    0% {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(0.04);
+    }
+
+    55% {
+      opacity: 0.75;
+    }
+
+    100% {
+      opacity: 0;
+      transform: translate(-50%, -50%) scale(1);
+    }
+  }
+
+  /* ===== 页面结构：顶栏 + 舞台（球体）+ 底部交互区 ===== */
+  .layout {
+    position: relative;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+
+  .topbar {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px 6px;
+  }
+
+  .topbar__brand {
+    font-family: consolas, menlo, monaco, "courier new", monospace;
+    font-size: calc(11px * var(--font-scale));
+    letter-spacing: 0.08em;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+
+  .topbar__status {
+    overflow: hidden;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: calc(11px * var(--font-scale));
+    color: var(--ink-soft);
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .topbar__status--error {
+    color: var(--error);
+  }
+
+  .btn {
+    flex: 0 0 auto;
+    height: 28px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.86);
+    color: var(--ink);
+    font-size: calc(12px * var(--font-scale));
+    transition: border-color 200ms ease, color 200ms ease, background 200ms ease;
+  }
+
+  .btn:hover:not(:disabled) {
+    border-color: var(--brand);
+    color: var(--brand);
+  }
+
+  .btn--primary {
+    border-color: transparent;
+    background: var(--brand);
+    color: #fff;
+  }
+
+  .btn--primary:hover:not(:disabled) {
+    border-color: transparent;
+    background: #2c49e0;
+    color: #fff;
+  }
+
+  .btn--icon {
+    width: 28px;
+    padding: 0;
+    border-radius: 50%;
+  }
+
+  /* 舞台：球体绘制区（canvas 是整屏的，这里只提供中心点与尺寸） */
+  .stage {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  /* 执行中的「生成中…」提示（在球心位置） */
+  .busy {
+    position: absolute;
+    top: 56%;
+    left: 50%;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+
+  body.is-busy .busy {
+    display: flex;
+  }
+
+  .busy__spin {
+    width: 26px;
+    height: 26px;
+    border: 2px solid rgba(59, 91, 255, 0.28);
+    border-top-color: var(--brand);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .busy__text {
+    font-size: calc(13px * var(--font-scale));
+    letter-spacing: 0.06em;
+    color: var(--brand);
+  }
+
+  /* ===== 底部交互区（球的正下方，也就是原来音轨的位置） ===== */
+  .dock {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 14px 12px;
+  }
+
+  /* 本次结果（控制台自身也要显示改动文件与结果） */
+  .result {
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: rgba(255, 255, 255, 0.8);
+    font-size: calc(11px * var(--font-scale));
+  }
+
+  .result__head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--ink-soft);
+  }
+
+  .result__dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--ok);
+  }
+
+  .result--error .result__dot {
+    background: var(--error);
+  }
+
+  .result__files {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 66px;
+    overflow: auto;
+    margin: 6px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .result__file {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    color: var(--ink);
+  }
+
+  .status-tag {
+    flex: 0 0 auto;
+    padding: 0 4px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    color: var(--ink-soft);
+    font-size: calc(10px * var(--font-scale));
+  }
+
+  .status-tag--modified {
+    color: var(--brand);
+  }
+
+  .status-tag--added {
+    color: var(--ok);
+  }
+
+  .status-tag--deleted {
+    color: var(--error);
+  }
+
+  .status-tag--untracked {
+    color: var(--warn);
+  }
+
+  .result__path {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .result__empty {
+    margin: 6px 0 0;
+    color: var(--ink-faint);
+  }
+
+  /* 输入框上方的「Agent 执行过程」开关 */
+  .panel-toggle {
+    display: flex;
+    align-self: flex-start;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    background: rgba(255, 255, 255, 0.86);
+    color: var(--ink-soft);
+    font-size: calc(12px * var(--font-scale));
+  }
+
+  .panel-toggle:hover {
+    border-color: var(--brand);
+    color: var(--brand);
+  }
+
+  .panel-toggle__caret {
+    font-size: calc(10px * var(--font-scale));
+  }
+
+  /* 输入区 / 音轨：同一位置两种形态 */
+  .dock__row {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    min-height: 66px;
+  }
+
+  .field {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 66px;
+    max-height: 148px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    outline: none;
+    background: rgba(255, 255, 255, 0.92);
+    color: var(--ink);
+    font-family: inherit;
+    font-size: calc(12px * var(--font-scale));
+    line-height: 1.5;
+    resize: none;
+    transition: border-color 200ms ease;
+  }
+
+  .field::placeholder {
+    color: var(--ink-faint);
+  }
+
+  .field:focus {
+    border-color: var(--brand);
+  }
+
+  .field:disabled {
+    opacity: 0.6;
+  }
+
+  /* 白色波形音轨（深色玻璃条：白色波形在浅色页面上必须有深色底衬才看得清） */
+  .track {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 66px;
+    align-items: center;
+    padding: 0 8px;
+    border: 1px solid rgba(23, 32, 58, 0.45);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, rgba(23, 32, 58, 0.84), rgba(23, 32, 58, 0.74));
+  }
+
+  .track__wave {
+    display: block;
+    width: 100%;
+    height: 46px;
+  }
+
+  .track__live {
+    position: absolute;
+    right: 8px;
+    bottom: 2px;
+    left: 8px;
+    overflow: hidden;
+    font-size: calc(10px * var(--font-scale));
+    color: rgba(255, 255, 255, 0.72);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dock__hint {
+    min-height: 16px;
+    font-size: calc(11px * var(--font-scale));
+    color: var(--ink-soft);
+    word-break: break-word;
+  }
+
+  .dock__hint--error {
+    color: var(--error);
+  }
+
+  /* ===== Agent 执行过程面板（背景透明度可调） ===== */
+  .panel {
+    position: absolute;
+    z-index: 5;
+    top: 40px;
+    right: 10px;
+    left: 10px;
+    display: flex;
+    flex-direction: column;
+    max-height: 58vh;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: rgba(255, 255, 255, var(--panel-alpha));
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 12px 32px rgba(27, 36, 49, 0.12);
+  }
+
+  .panel__head {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .panel__title {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: calc(12px * var(--font-scale));
+    font-weight: 600;
+  }
+
+  .panel__alpha {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: calc(10px * var(--font-scale));
+    color: var(--ink-soft);
+    white-space: nowrap;
+  }
+
+  .panel__alpha input {
+    width: 66px;
+    accent-color: var(--brand);
+  }
+
+  .panel__body {
+    overflow: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 8px 10px 10px;
+    font-size: calc(11px * var(--font-scale));
+  }
+
+  .section {
+    margin-top: 10px;
+  }
+
+  .section:first-child {
+    margin-top: 0;
+  }
+
+  .section__title {
+    margin-bottom: 4px;
+    color: var(--ink-soft);
+    font-size: calc(10px * var(--font-scale));
+    letter-spacing: 0.06em;
+  }
+
+  .kv {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 3px;
+    color: var(--ink);
+  }
+
+  .kv__key {
+    flex: 0 0 auto;
+    color: var(--ink-soft);
+  }
+
+  .kv__val {
+    min-width: 0;
+    word-break: break-word;
+  }
+
+  .pre {
+    overflow: auto;
+    max-height: 132px;
+    margin: 0;
+    padding: 6px 8px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(246, 248, 252, 0.72);
+    color: var(--ink);
+    font-family: consolas, menlo, monaco, "courier new", monospace;
+    font-size: calc(10px * var(--font-scale));
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .file-list__item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .history {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .history__item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 6px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+
+  .history__item:hover {
+    border-color: var(--line);
+    color: var(--ink);
+  }
+
+  .history__item--active {
+    border-color: var(--brand);
+    color: var(--brand);
+  }
+
+  .history__time {
+    flex: 0 0 auto;
+    font-family: consolas, menlo, monaco, "courier new", monospace;
+  }
+
+  .history__prompt {
+    overflow: hidden;
+    flex: 1 1 auto;
+    min-width: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .muted {
+    color: var(--ink-faint);
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+</style>
+</head>
+<body>
+  <!-- 浅色幕 + 球体神经网络画布 -->
+  <div class="veil"></div>
+  <canvas id="mesh" class="mesh" data-testid="dev-console-mesh"></canvas>
+
+  <!-- 执行中：整屏向外释放的波纹（球体消失） -->
+  <div class="rings" id="rings" aria-hidden="true">
+    <span class="ring ring--1"></span>
+    <span class="ring ring--2"></span>
+    <span class="ring ring--3"></span>
+    <span class="ring ring--4"></span>
+  </div>
+
+  <div class="layout">
+    <header class="topbar">
+      <span class="topbar__brand">vibe-admin-runtime</span>
+      <span class="topbar__status" id="statusLine" data-testid="dev-console-status">正在检查运行环境…</span>
+      <button type="button" class="btn" id="exitBtn" data-testid="dev-console-exit">退出</button>
+    </header>
+
+    <div class="stage" id="stage">
+      <div class="busy" data-testid="dev-console-busy">
+        <span class="busy__spin"></span>
+        <span class="busy__text">生成中…</span>
+      </div>
+    </div>
+
+    <div class="dock">
+      <!-- 本次执行结果 -->
+      <section class="result" id="resultCard" hidden data-testid="dev-console-result"></section>
+
+      <!-- 输入框上方的「Agent 执行过程」开关 -->
+      <button type="button" class="panel-toggle" id="panelToggle" data-testid="dev-console-panel-toggle"
+        aria-expanded="false">
+        <span class="panel-toggle__caret" id="panelCaret">▸</span>
+        <span>Agent 执行过程</span>
+      </button>
+
+      <!-- 输入区 / 音轨：默认文字输入 -->
+      <div class="dock__row">
+        <textarea id="promptInput" class="field" data-testid="dev-console-input" rows="3"
+          placeholder="输入需求，回车发送，Shift + 回车换行"></textarea>
+
+        <div class="track" id="track" hidden data-testid="dev-console-track">
+          <canvas id="wave" class="track__wave" data-testid="dev-console-wave"></canvas>
+          <span class="track__live" id="liveText"></span>
+        </div>
+
+        <button type="button" class="btn btn--icon" id="modeBtn" data-testid="dev-console-mode-toggle"
+          title="切换到语音输入">🎙</button>
+        <button type="button" class="btn btn--primary" id="sendBtn" data-testid="dev-console-send">发送</button>
+      </div>
+
+      <div class="dock__hint" id="hintLine" data-testid="dev-console-hint"></div>
+    </div>
+
+    <!-- Agent 执行过程面板 -->
+    <section class="panel" id="panel" hidden data-testid="dev-console-panel">
+      <div class="panel__head">
+        <span class="panel__title">Agent 执行过程</span>
+        <label class="panel__alpha">
+          背景透明度
+          <input type="range" id="alphaRange" min="0" max="100" step="1" value="86" data-testid="dev-console-alpha" />
+        </label>
+        <button type="button" class="btn" id="refreshBtn" data-testid="dev-console-refresh">刷新</button>
+        <button type="button" class="btn" id="panelCloseBtn">收起</button>
+      </div>
+      <div class="panel__body" id="panelBody"></div>
+    </section>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ==================================================================
+   * 0. 基础工具
+   * ================================================================== */
+  var $ = function (id) { return document.getElementById(id); };
+
+  /** 毫秒 → 人类可读耗时 */
+  function formatDuration(ms) {
+    var value = Number(ms);
+    if (!isFinite(value) || value < 0) return '—';
+    if (value < 1000) return value + 'ms';
+    if (value < 60000) return (value / 1000).toFixed(1) + 's';
+    return Math.floor(value / 60000) + 'm' + Math.round((value % 60000) / 1000) + 's';
+  }
+
+  /** ISO 时间 → 本地时分秒 */
+  function formatClock(iso) {
+    var date = iso ? new Date(iso) : null;
+    if (!date || isNaN(date.getTime())) return '—';
+    var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    return pad(date.getHours()) + ':' + pad(date.getMinutes()) + ':' + pad(date.getSeconds());
+  }
+
+  /** git 状态码 → 中文标签 + 样式后缀 */
+  function statusInfo(code) {
+    var value = String(code == null ? '' : code).trim().toUpperCase();
+    if (value === 'M') return { label: '修改', key: 'modified' };
+    if (value === 'A') return { label: '新增', key: 'added' };
+    if (value === 'D') return { label: '删除', key: 'deleted' };
+    if (value === 'R') return { label: '重命名', key: 'renamed' };
+    if (value === '??' || value === '?') return { label: '未跟踪', key: 'untracked' };
+    return { label: '变更', key: 'changed' };
+  }
+
+  /* ==================================================================
+   * 1. Token：主窗口用 #token=<encodeURIComponent(token)> 打开本页
+   *    注意：token 只保存在内存里，不打印到日志
+   * ================================================================== */
+  var TOKEN = (function readToken() {
+    var matched = /[#&]token=([^&]*)/.exec(String(window.location.hash || ''));
+    if (!matched) return '';
+    try {
+      return decodeURIComponent(matched[1] || '');
+    } catch (error) {
+      return '';
+    }
+  })();
+
+  var API_BASE = '/hippoadmin/dev-agent';
+
+  /** 统一请求：带 Authorization，解析 { code, message, data } */
+  function api(path, options) {
+    var config = options || {};
+    var headers = { Authorization: TOKEN };
+    if (config.body) headers['Content-Type'] = 'application/json';
+
+    return fetch(API_BASE + path, {
+      method: config.method || 'GET',
+      headers: headers,
+      body: config.body
+    }).then(function (response) {
+      return response.text().then(function (text) {
+        var body = null;
+        try {
+          body = JSON.parse(text);
+        } catch (error) {
+          body = null;
+        }
+        if (!body) {
+          throw new Error('接口返回异常（HTTP ' + response.status + '）');
+        }
+        if (body.code !== 2000) {
+          throw new Error(body.msg || body.message || '请求失败');
+        }
+        return body.data;
+      });
+    });
+  }
+
+  /* ==================================================================
+   * 2. 页面元素与状态
+   * ================================================================== */
+  var stageEl = $('stage');
+  var meshCanvas = $('mesh');
+  var waveCanvas = $('wave');
+  var trackEl = $('track');
+  var promptInput = $('promptInput');
+  var modeBtn = $('modeBtn');
+  var sendBtn = $('sendBtn');
+  var hintLine = $('hintLine');
+  var liveText = $('liveText');
+  var statusLine = $('statusLine');
+  var resultCard = $('resultCard');
+  var panelEl = $('panel');
+  var panelToggle = $('panelToggle');
+  var panelCaret = $('panelCaret');
+  var panelBody = $('panelBody');
+  var alphaRange = $('alphaRange');
+
+  var PANEL_ALPHA_KEY = 'dev-mode-console-panel-alpha';
+
+  var state = {
+    /** 'text' | 'voice' */
+    mode: 'text',
+    /** 输入框内容（语音识别结果追加到这里） */
+    text: '',
+    /** 麦克风/扬声器链路是否可用 */
+    micReady: false,
+    listening: false,
+    /** dsh 是否就绪 */
+    ready: false,
+    readyHint: '',
+    generating: false,
+    /** 本窗口最近一次执行结果 */
+    lastResult: null,
+    /** /dev-agent/runs 返回的历史 */
+    runs: [],
+    runsRunning: false,
+    selectedRunId: null,
+    panelOpen: false
+  };
+
+  function setHint(text, isError) {
+    hintLine.textContent = text || '';
+    hintLine.className = 'dock__hint' + (isError ? ' dock__hint--error' : '');
+  }
+
+  function setStatus(text, isError) {
+    statusLine.textContent = text || '';
+    statusLine.className = 'topbar__status' + (isError ? ' topbar__status--error' : '');
+  }
+
+  function syncSendButton() {
+    var blocked = !TOKEN || !state.ready || state.generating;
+    sendBtn.disabled = blocked;
+    sendBtn.textContent = state.generating ? '生成中…' : '发送';
+  }
+
+  /* ==================================================================
+   * 3. 球体神经网络（整屏 canvas；球面节点 + 球内核心 + 外围淡淡网格）
+   * ================================================================== */
+  var SPHERE_NODE_COUNT = 186;
+  var SPHERE_CORE_COUNT = 14;
+  var SPHERE_LINK_RATIO = 0.5;
+  var BRIDGE_MAX = 2;
+
+  var view = { w: 0, h: 0, cx: 0, cy: 0, radius: 132, dpr: 1 };
+  var sphereNodes = [];
+  var fieldNodes = [];
+  var meshCtx = null;
+  var lastTime = 0;
+  /** 执行态过渡量：0=神经网络在，1=完全散开淡出 */
+  var busyMix = 0;
+  /** 品牌色色相（缓慢漂移） */
+  var baseHue = 224;
+  /** 平滑后的音量 0~1 */
+  var smoothLevel = 0;
+
+  function randomUnitVector() {
+    var z = Math.random() * 2 - 1;
+    var angle = Math.random() * Math.PI * 2;
+    var r = Math.sqrt(Math.max(0, 1 - z * z));
+    return { x: Math.cos(angle) * r, y: z, z: Math.sin(angle) * r };
+  }
+
+  /** 生成球面节点（Fibonacci 均匀分布）+ 球内核心节点 + 外围稀疏网格 */
+  function initNodes() {
+    var golden = Math.PI * (3 - Math.sqrt(5));
+    sphereNodes = [];
+
+    for (var i = 0; i < SPHERE_NODE_COUNT; i += 1) {
+      var y = 1 - (i / (SPHERE_NODE_COUNT - 1)) * 2;
+      var ring = Math.sqrt(Math.max(0, 1 - y * y));
+      var theta = golden * i;
+      var roll = Math.random();
+      sphereNodes.push({
+        ux: Math.cos(theta) * ring,
+        uy: y,
+        uz: Math.sin(theta) * ring,
+        u: theta,
+        v: Math.acos(Math.min(1, Math.max(-1, y))),
+        phase: Math.random() * Math.PI * 2,
+        tier: roll > 0.88 ? 2 : roll > 0.58 ? 1 : 0,
+        isCore: false,
+        fire: 0,
+        tx: 0,
+        ty: 0,
+        tz: 0,
+        sx: 0,
+        sy: 0,
+        depth: 0.5,
+        size: 1,
+        alpha: 1
+      });
+    }
+
+    for (var c = 0; c < SPHERE_CORE_COUNT; c += 1) {
+      var dir = randomUnitVector();
+      var shrink = 0.3 + Math.random() * 0.52;
+      sphereNodes.push({
+        ux: dir.x * shrink,
+        uy: dir.y * shrink,
+        uz: dir.z * shrink,
+        u: Math.random() * Math.PI * 2,
+        v: Math.random() * Math.PI,
+        phase: Math.random() * Math.PI * 2,
+        tier: 1,
+        isCore: true,
+        fire: 0,
+        tx: 0,
+        ty: 0,
+        tz: 0,
+        sx: 0,
+        sy: 0,
+        depth: 0.5,
+        size: 1,
+        alpha: 1
+      });
+    }
+
+    fieldNodes = [];
+    var count = Math.min(96, Math.max(56, Math.round((view.w * view.h) / 22000)));
+    var guard = 0;
+    while (fieldNodes.length < count && guard < 4000) {
+      guard += 1;
+      var fx = Math.random() * view.w;
+      var fy = Math.random() * view.h;
+      if (Math.hypot(fx - view.cx, fy - view.cy) < view.radius * 1.25) continue;
+      fieldNodes.push({
+        x: fx,
+        y: fy,
+        vx: (Math.random() - 0.5) * 0.32,
+        vy: (Math.random() - 0.5) * 0.32,
+        phase: Math.random() * Math.PI * 2,
+        fire: 0,
+        dx: 0,
+        dy: 0
+      });
+    }
+  }
+
+  /** 量出舞台尺寸：球心与半径跟着窗口自适应 */
+  function measureStage() {
+    var rect = stageEl.getBoundingClientRect();
+    view.w = Math.max(1, window.innerWidth);
+    view.h = Math.max(1, window.innerHeight);
+    view.dpr = window.devicePixelRatio || 1;
+    view.cx = rect.left + rect.width / 2;
+    // 球心略低于舞台中心，让「球 → 下方输入框」的距离更紧凑
+    view.cy = rect.top + rect.height * 0.56;
+    view.radius = Math.max(92, Math.min(200, rect.width * 0.35));
+
+    meshCanvas.width = Math.max(1, Math.floor(view.w * view.dpr));
+    meshCanvas.height = Math.max(1, Math.floor(view.h * view.dpr));
+    meshCanvas.dataset.radius = String(Math.round(view.radius));
+
+    // 尺寸变化只把外围节点收敛回视口，球面节点是按方向即时投影的
+    for (var i = 0; i < fieldNodes.length; i += 1) {
+      var node = fieldNodes[i];
+      node.x = Math.min(Math.max(node.x, 0), view.w);
+      node.y = Math.min(Math.max(node.y, 0), view.h);
+    }
+  }
+
+  /** 画一帧球体神经网络（球面波 + 缓慢自转 + 近大远小/近亮远暗 + bloom） */
+  function drawMesh(now) {
+    if (!meshCtx) return;
+    var ctx = meshCtx;
+    var dt = lastTime ? Math.min(48, now - lastTime) : 16;
+    lastTime = now;
+
+    ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+    ctx.clearRect(0, 0, view.w, view.h);
+
+    var fade = 1 - busyMix;
+    if (fade <= 0.01) return;
+
+    var cx = view.cx;
+    var cy = view.cy;
+    var R = view.radius;
+
+    var spin = (now / 1000) * 0.13;
+    var tilt = Math.sin(now / 5200) * 0.22;
+    var cosSpin = Math.cos(spin);
+    var sinSpin = Math.sin(spin);
+    var cosTilt = Math.cos(tilt);
+    var sinTilt = Math.sin(tilt);
+
+    var waveSpeed = 1 + smoothLevel * 0.55;
+    var t = (now / 1000) * waveSpeed;
+    var waveAmp = 0.09 + smoothLevel * 0.055;
+    var disperse = 1 + busyMix * 0.9;
+
+    // 鲜明配色：主色相 + 邻近色相 + 对比色相，缓慢漂移（约 50s 一轮）
+    var hue = (baseHue + now / 140) % 360;
+    var colorA = 'hsl(' + hue + ', 92%, 44%)';
+    var colorB = 'hsl(' + ((hue + 38) % 360) + ', 95%, 46%)';
+    var colorC = 'hsl(' + ((hue + 296) % 360) + ', 90%, 52%)';
+
+    // 球体柔和底色：加法混合叠出「实体 + 发光」
+    ctx.globalCompositeOperation = 'lighter';
+    var glow = ctx.createRadialGradient(cx, cy, R * 0.08, cx, cy, R * 1.5);
+    glow.addColorStop(0, 'hsla(' + hue + ', 96%, 62%, ' + (0.3 * fade) + ')');
+    glow.addColorStop(0.42, 'hsla(' + ((hue + 40) % 360) + ', 96%, 60%, ' + (0.15 * fade) + ')');
+    glow.addColorStop(1, 'hsla(' + ((hue + 80) % 360) + ', 96%, 60%, 0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // ── 球面节点：自转 + 球面波 + 深度层次 ──
+    var i;
+    var node;
+    for (i = 0; i < sphereNodes.length; i += 1) {
+      node = sphereNodes[i];
+      var base = Math.hypot(node.ux, node.uy, node.uz) || 1;
+      var w1 = Math.sin(node.u * 3 + t * 1.15);
+      var w2 = Math.sin(node.v * 4 - t * 0.95);
+      var w3 = Math.sin((node.u + node.v) * 2 + t * 0.7);
+      var wave = (0.42 * w1 + 0.34 * w2 + 0.24 * w3) * waveAmp * (node.isCore ? 0.35 : 1);
+      var r = R * base * (1 + wave) * disperse;
+
+      var x1 = node.ux * cosSpin + node.uz * sinSpin;
+      var y1 = node.uy;
+      var z1 = -node.ux * sinSpin + node.uz * cosSpin;
+      var y2 = y1 * cosTilt - z1 * sinTilt;
+      var z2 = y1 * sinTilt + z1 * cosTilt;
+
+      node.tx = x1 * r;
+      node.ty = y2 * r;
+      node.tz = z2 * r;
+
+      var persp = 1 + z2 * 0.07;
+      node.sx = cx + node.tx * persp;
+      node.sy = cy + node.ty * persp;
+      node.depth = (z2 + 1) / 2;
+
+      var tierScale = node.tier === 2 ? 1.8 : node.tier === 1 ? 1.35 : 1;
+      node.size = (0.7 + node.depth * 1.3) * tierScale;
+      node.alpha = (0.36 + node.depth * 0.7) * fade * (node.isCore ? 1.15 : 1);
+      node.fire = 0.5 + 0.5 * Math.sin(now / 620 + node.phase);
+    }
+
+    // ── 球面连线：按透明度分桶批量描边 ──
+    var sphereLink = R * SPHERE_LINK_RATIO;
+    var sphereLink2 = sphereLink * sphereLink;
+    var sphereBuckets = [[], [], [], [], [], [], []];
+
+    for (i = 0; i < sphereNodes.length; i += 1) {
+      var a = sphereNodes[i];
+      for (var j = i + 1; j < sphereNodes.length; j += 1) {
+        var b = sphereNodes[j];
+        var dx = a.tx - b.tx;
+        var dy = a.ty - b.ty;
+        var dz = a.tz - b.tz;
+        var dist2 = dx * dx + dy * dy + dz * dz;
+        if (dist2 > sphereLink2) continue;
+
+        var near = 1 - Math.sqrt(dist2) / sphereLink;
+        var depthMix = Math.min(a.depth, b.depth);
+        var firing = 0.35 + 0.65 * (a.fire + b.fire) * 0.5;
+        var alpha = (0.26 + depthMix * 0.72) * near * firing * fade;
+        var bucket = Math.min(sphereBuckets.length - 1, Math.max(0, Math.floor(alpha / 0.16)));
+        sphereBuckets[bucket].push(a.sx, a.sy, b.sx, b.sy);
+      }
+    }
+
+    // ── 外围网格：整屏漂移 + 由球面波传出去的涟漪 ──
+    var fieldBuckets = [[], [], [], [], [], []];
+    var fieldLinkDist = Math.max(120, R * 1.35);
+    var fieldLink2 = fieldLinkDist * fieldLinkDist;
+    var bridgeLinkDist = Math.max(96, R * 0.9);
+    var bridgeLink2 = bridgeLinkDist * bridgeLinkDist;
+
+    for (i = 0; i < fieldNodes.length; i += 1) {
+      node = fieldNodes[i];
+      node.x += node.vx;
+      node.y += node.vy;
+      if (node.x <= 0 || node.x >= view.w) node.vx *= -1;
+      if (node.y <= 0 || node.y >= view.h) node.vy *= -1;
+      node.x = Math.min(Math.max(node.x, 0), view.w);
+      node.y = Math.min(Math.max(node.y, 0), view.h);
+
+      var ox = node.x - cx;
+      var oy = node.y - cy;
+      var dist = Math.hypot(ox, oy) || 1;
+      var ripple = Math.sin(dist / 52 - t * 1.5 + node.phase * 0.25)
+        * (0.55 + smoothLevel * 0.45) * Math.exp(-dist / 560) * 15;
+      node.dx = node.x + (ox / dist) * ripple;
+      node.dy = node.y + (oy / dist) * ripple;
+      node.fire = 0.5 + 0.5 * Math.sin(now / 700 + node.phase);
+    }
+
+    for (i = 0; i < fieldNodes.length; i += 1) {
+      a = fieldNodes[i];
+
+      for (j = i + 1; j < fieldNodes.length; j += 1) {
+        b = fieldNodes[j];
+        dx = a.dx - b.dx;
+        dy = a.dy - b.dy;
+        dist2 = dx * dx + dy * dy;
+        if (dist2 > fieldLink2) continue;
+
+        near = 1 - Math.sqrt(dist2) / fieldLinkDist;
+        firing = 0.4 + 0.6 * (a.fire + b.fire) * 0.5;
+        alpha = (0.16 + smoothLevel * 0.12) * near * firing * fade;
+        bucket = Math.min(fieldBuckets.length - 1, Math.max(0, Math.floor(alpha / 0.08)));
+        fieldBuckets[bucket].push(a.dx, a.dy, b.dx, b.dy);
+      }
+
+      // 球面 ↔ 外围：只连最近的两三个球面节点，避免拉出放射状「星芒」
+      var candidates = [];
+      for (var k = 0; k < sphereNodes.length; k += 1) {
+        var s = sphereNodes[k];
+        var sdx = a.dx - s.sx;
+        var sdy = a.dy - s.sy;
+        var sdist2 = sdx * sdx + sdy * sdy;
+        if (sdist2 > bridgeLink2) continue;
+        candidates.push({ d: Math.sqrt(sdist2), x: s.sx, y: s.sy });
+      }
+      if (candidates.length > 1) candidates.sort(function (p, q) { return p.d - q.d; });
+      for (var m = 0; m < Math.min(BRIDGE_MAX, candidates.length); m += 1) {
+        var hit = candidates[m];
+        near = 1 - hit.d / bridgeLinkDist;
+        alpha = 0.34 * near * fade;
+        bucket = Math.min(fieldBuckets.length - 1, Math.max(0, Math.floor(alpha / 0.08)));
+        fieldBuckets[bucket].push(a.dx, a.dy, hit.x, hit.y);
+      }
+    }
+
+    /** 批量描边（几千条边只 stroke 几次，帧率稳） */
+    function strokeBuckets(buckets, step, offset) {
+      for (var index = 0; index < buckets.length; index += 1) {
+        var segment = buckets[index];
+        if (!segment.length) continue;
+        ctx.globalAlpha = Math.min(0.92, offset + (index + 0.5) * step);
+        ctx.beginPath();
+        for (var p = 0; p < segment.length; p += 4) {
+          ctx.moveTo(segment[p], segment[p + 1]);
+          ctx.lineTo(segment[p + 2], segment[p + 3]);
+        }
+        ctx.stroke();
+      }
+    }
+
+    ctx.globalCompositeOperation = 'source-over';
+
+    // 外围连线（整屏淡淡的网格）
+    var fieldStroke = ctx.createLinearGradient(0, 0, view.w, view.h);
+    fieldStroke.addColorStop(0, colorA);
+    fieldStroke.addColorStop(0.5, colorB);
+    fieldStroke.addColorStop(1, colorC);
+    ctx.strokeStyle = fieldStroke;
+    ctx.lineWidth = 1;
+    strokeBuckets(fieldBuckets, 0.08, 0.06);
+
+    // 球面连线（更粗更亮）
+    var sphereStroke = ctx.createLinearGradient(cx - R, cy - R, cx + R, cy + R);
+    sphereStroke.addColorStop(0, colorA);
+    sphereStroke.addColorStop(0.5, colorB);
+    sphereStroke.addColorStop(1, colorC);
+    ctx.strokeStyle = sphereStroke;
+    ctx.lineWidth = 1.4 + smoothLevel * 0.9;
+    strokeBuckets(sphereBuckets, 0.16, 0.16);
+
+    // 外围网格节点
+    var dotBuckets = [[], [], [], [], []];
+    for (i = 0; i < fieldNodes.length; i += 1) {
+      node = fieldNodes[i];
+      alpha = (0.34 + smoothLevel * 0.2) * (0.6 + node.fire * 0.7) * fade;
+      bucket = Math.min(dotBuckets.length - 1, Math.max(0, Math.floor(alpha / 0.14)));
+      dotBuckets[bucket].push(node.dx, node.dy, 1.2 + node.fire * 0.7);
+    }
+    ctx.fillStyle = fieldStroke;
+    for (var db = 0; db < dotBuckets.length; db += 1) {
+      var dots = dotBuckets[db];
+      if (!dots.length) continue;
+      ctx.globalAlpha = Math.min(0.85, 0.1 + (db + 0.5) * 0.14);
+      ctx.beginPath();
+      for (var di = 0; di < dots.length; di += 3) {
+        var dotX = dots[di];
+        var dotY = dots[di + 1];
+        var dotR = Math.max(0.5, dots[di + 2]);
+        // arc 会从当前点连线到圆弧起点，必须先用 moveTo 起新子路径
+        ctx.moveTo(dotX + dotR, dotY);
+        ctx.arc(dotX, dotY, dotR, 0, Math.PI * 2);
+      }
+      ctx.fill();
+    }
+
+    // 球面节点 bloom 外发光（加法混合，两档批量画）
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = sphereStroke;
+    var passes = [
+      { tier: 2, scale: 4.6, alpha: 0.24 },
+      { tier: 1, scale: 2.9, alpha: 0.12 }
+    ];
+    for (var pi = 0; pi < passes.length; pi += 1) {
+      var pass = passes[pi];
+      ctx.globalAlpha = pass.alpha * fade;
+      ctx.beginPath();
+      var any = false;
+      for (i = 0; i < sphereNodes.length; i += 1) {
+        node = sphereNodes[i];
+        if (node.tier !== pass.tier) continue;
+        ctx.moveTo(node.sx + node.size * pass.scale, node.sy);
+        ctx.arc(node.sx, node.sy, Math.max(0.6, node.size * pass.scale), 0, Math.PI * 2);
+        any = true;
+      }
+      if (any) ctx.fill();
+    }
+
+    // 球面节点本体
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = sphereStroke;
+    var nodeBuckets = [[], [], [], [], []];
+    for (i = 0; i < sphereNodes.length; i += 1) {
+      node = sphereNodes[i];
+      alpha = node.alpha * (0.55 + node.fire * 0.8);
+      bucket = Math.min(nodeBuckets.length - 1, Math.max(0, Math.floor(alpha / 0.18)));
+      nodeBuckets[bucket].push(node.sx, node.sy, node.size);
+    }
+    for (var nb = 0; nb < nodeBuckets.length; nb += 1) {
+      var items = nodeBuckets[nb];
+      if (!items.length) continue;
+      ctx.globalAlpha = Math.min(0.98, 0.2 + (nb + 0.5) * 0.18);
+      ctx.beginPath();
+      for (var ni = 0; ni < items.length; ni += 3) {
+        var nodeX = items[ni];
+        var nodeY = items[ni + 1];
+        var nodeR = Math.max(0.5, items[ni + 2]);
+        ctx.moveTo(nodeX + nodeR, nodeY);
+        ctx.arc(nodeX, nodeY, nodeR, 0, Math.PI * 2);
+      }
+      ctx.fill();
+    }
+
+    ctx.globalAlpha = 1;
+  }
+
+  /* ==================================================================
+   * 4. 白色波形音轨（语音模式，同一位置）
+   * ================================================================== */
+  var audioStream = null;
+  var audioContext = null;
+  var analyser = null;
+  var timeData = null;
+  var recognition = null;
+  var suppressAutoSend = false;
+  var session = 0;
+  /** 连续模式被浏览器结束后的自动续接次数（避免失败时无限重启） */
+  var restartCount = 0;
+
+  function drawWave() {
+    var ctx = waveCanvas.getContext('2d');
+    if (!ctx) return;
+
+    var dpr = window.devicePixelRatio || 1;
+    var width = waveCanvas.clientWidth || 320;
+    var height = waveCanvas.clientHeight || 46;
+    var pixelWidth = Math.max(1, Math.floor(width * dpr));
+    var pixelHeight = Math.max(1, Math.floor(height * dpr));
+    if (waveCanvas.width !== pixelWidth || waveCanvas.height !== pixelHeight) {
+      waveCanvas.width = pixelWidth;
+      waveCanvas.height = pixelHeight;
+    }
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    var mid = height / 2;
+    ctx.beginPath();
+
+    if (analyser && timeData) {
+      analyser.getByteTimeDomainData(timeData);
+      var step = Math.max(1, Math.floor(timeData.length / 140));
+      var started = false;
+      for (var i = 0; i < timeData.length; i += step) {
+        var value = ((timeData[i] || 128) - 128) / 128;
+        var x = (i / (timeData.length - 1)) * width;
+        var y = mid - value * mid * 0.9;
+        if (started) ctx.lineTo(x, y);
+        else {
+          ctx.moveTo(x, y);
+          started = true;
+        }
+      }
+    } else {
+      // 没有麦克风数据时画一条静止基线
+      ctx.moveTo(0, mid);
+      ctx.lineTo(width, mid);
+    }
+
+    // 白色波形主体（深色底衬上直接发光，浅色页面上也清晰）
+    var gradient = ctx.createLinearGradient(0, 0, width, 0);
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.35)');
+    gradient.addColorStop(0.5, 'rgba(255, 255, 255, 1)');
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0.35)');
+    ctx.strokeStyle = gradient;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.shadowColor = 'rgba(255, 255, 255, 0.9)';
+    ctx.shadowBlur = 10;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  /* ==================================================================
+   * 5. 帧循环：音频电平 + 球体 + 音轨统一在一个 rAF 里
+   * ================================================================== */
+  var rafId = 0;
+
+  function tick() {
+    rafId = 0;
+    if (document.hidden) return;
+
+    rafId = window.requestAnimationFrame(tick);
+    var now = performance.now();
+
+    var level = 0;
+    if (analyser && timeData) {
+      analyser.getByteTimeDomainData(timeData);
+      var sum = 0;
+      for (var i = 0; i < timeData.length; i += 1) {
+        var value = ((timeData[i] || 128) - 128) / 128;
+        sum += value * value;
+      }
+      level = Math.min(1, Math.sqrt(sum / timeData.length) * 4);
+    }
+
+    if (state.generating) {
+      level = Math.max(level, 0.45 + 0.25 * Math.sin(now / 260));
+    }
+
+    smoothLevel = smoothLevel * 0.85 + level * 0.15;
+
+    var target = state.generating ? 1 : 0;
+    var dt = 16;
+    busyMix += (target - busyMix) * Math.min(1, dt * 0.0045);
+
+    drawMesh(now);
+    if (state.mode === 'voice') drawWave();
+  }
+
+  function startLoop() {
+    if (!rafId) rafId = window.requestAnimationFrame(tick);
+  }
+
+  function handleVisibility() {
+    if (document.hidden) {
+      if (rafId) {
+        window.cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+      return;
+    }
+    startLoop();
+  }
+
+  /* ==================================================================
+   * 6. 麦克风与语音识别（全部判空兜底，失败自动退回文字输入）
+   * ================================================================== */
+  function createRecognition() {
+    var Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) return null;
+
+    var instance;
+    try {
+      instance = new Recognition();
+    } catch (error) {
+      return null;
+    }
+
+    instance.lang = 'zh-CN';
+    instance.continuous = true;
+    instance.interimResults = true;
+
+    instance.onresult = function (event) {
+      restartCount = 0;
+      var interim = '';
+      for (var i = event.resultIndex; i < event.results.length; i += 1) {
+        var item = event.results[i];
+        var text = item && item[0] ? item[0].transcript || '' : '';
+        if (item && item.isFinal) appendText(text);
+        else interim += text;
+      }
+      liveText.textContent = interim ? '识别中：' + interim : currentTextPreview();
+    };
+
+    // 识别层的错误只提示、不抛出；真正的「无权限/无设备」由 getUserMedia 决定是否退回文字输入
+    instance.onerror = function (event) {
+      var reason = event && event.error ? event.error : '';
+      state.listening = false;
+
+      if (reason === 'audio-capture') {
+        restartCount = 5;
+        setHint('没有找到麦克风设备，已退回文字输入', true);
+        fallbackToText();
+        return;
+      }
+      if (reason === 'not-allowed' || reason === 'service-not-allowed') {
+        restartCount = 5;
+        setHint('语音识别权限被拒绝，可切回文字输入继续输入');
+        return;
+      }
+      if (reason === 'network') {
+        restartCount = 5;
+        setHint('语音识别服务不可用，可切回文字输入继续输入');
+        return;
+      }
+      restartCount = 5;
+      setHint('语音识别异常' + (reason ? '（' + reason + '）' : '') + '，可切回文字输入', true);
+    };
+
+    instance.onend = function () {
+      state.listening = false;
+      liveText.textContent = currentTextPreview();
+      // 连续模式会被浏览器定时结束：有限次自动续接，避免失败时无限重启
+      if (suppressAutoSend || state.mode !== 'voice' || !recognition) return;
+      if (restartCount >= 5) {
+        setHint('语音识别已停止，可点击麦克风按钮重新开始');
+        return;
+      }
+      restartCount += 1;
+      window.setTimeout(function () {
+        if (suppressAutoSend || state.mode !== 'voice' || !recognition) return;
+        try {
+          recognition.start();
+          state.listening = true;
+        } catch (error) {
+          /* 忽略：可能已经启动 */
+        }
+      }, 320);
+    };
+
+    return instance;
+  }
+
+  /** 语音结果「追加」到输入框已有文字后面 */
+  function appendText(text) {
+    var value = String(text || '').trim();
+    if (!value) return;
+
+    var existing = String(state.text || '');
+    if (existing && !/[\s，。；、,.;]$/.test(existing)) existing += ' ';
+    state.text = existing + value;
+    promptInput.value = state.text;
+    liveText.textContent = currentTextPreview();
+  }
+
+  function currentTextPreview() {
+    var value = String(state.text || '').trim();
+    if (!value) return '等待语音输入，识别结果会追加到输入框';
+    return '已识别：' + (value.length > 42 ? value.slice(0, 42) + '…' : value);
+  }
+
+  async function startAudio(token) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setHint('当前环境不支持麦克风采集，请用文字输入', true);
+      fallbackToText();
+      return;
+    }
+
+    var stream = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (error) {
+      setHint('麦克风不可用（权限或设备问题），已退回文字输入', true);
+      fallbackToText();
+      return;
+    }
+
+    if (token !== session || state.mode !== 'voice') {
+      stream.getTracks().forEach(function (track) { track.stop(); });
+      return;
+    }
+
+    audioStream = stream;
+
+    try {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) {
+        setHint('当前环境不支持音频分析，请用文字输入', true);
+        fallbackToText();
+        return;
+      }
+
+      audioContext = new Ctx();
+      if (audioContext.state === 'suspended') await audioContext.resume();
+
+      if (token !== session || state.mode !== 'voice') {
+        stopAudio();
+        return;
+      }
+
+      var source = audioContext.createMediaStreamSource(audioStream);
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.85;
+      source.connect(analyser);
+      timeData = new Uint8Array(analyser.fftSize);
+
+      state.micReady = true;
+      state.listening = true;
+      setHint('正在聆听，识别结果会追加到输入框');
+    } catch (error) {
+      setHint('音频初始化失败，已退回文字输入', true);
+      fallbackToText();
+    }
+  }
+
+  function stopAudio() {
+    if (audioStream) {
+      try {
+        audioStream.getTracks().forEach(function (track) { track.stop(); });
+      } catch (error) {
+        /* 忽略 */
+      }
+      audioStream = null;
+    }
+
+    if (audioContext) {
+      try {
+        audioContext.close();
+      } catch (error) {
+        /* 忽略 */
+      }
+      audioContext = null;
+    }
+
+    analyser = null;
+    timeData = null;
+    state.micReady = false;
+    state.listening = false;
+  }
+
+  function startRecognition() {
+    recognition = createRecognition();
+    if (!recognition) {
+      // 没有语音识别能力时仍保留音轨形态（可见、可切回文字），只提示不可用
+      setHint('当前环境不支持语音识别，可切回文字输入');
+      liveText.textContent = '当前环境不支持语音识别，可切回文字输入';
+      return;
+    }
+    try {
+      recognition.start();
+      state.listening = true;
+    } catch (error) {
+      /* 忽略：重复 start 会抛错 */
+    }
+  }
+
+  function stopRecognition() {
+    suppressAutoSend = true;
+    if (!recognition) return;
+    recognition.onend = null;
+    recognition.onresult = null;
+    recognition.onerror = null;
+    try {
+      recognition.stop();
+    } catch (error) {
+      /* 忽略：可能已经停止 */
+    }
+    recognition = null;
+    state.listening = false;
+  }
+
+  /* ==================================================================
+   * 7. 文字 / 语音模式切换
+   * ================================================================== */
+  function enterVoiceMode() {
+    // 先把 UI 切到音轨形态（同一位置变成白色波形），再申请麦克风
+    state.mode = 'voice';
+    promptInput.hidden = true;
+    trackEl.hidden = false;
+    modeBtn.textContent = '⌨';
+    modeBtn.title = '切换回文字输入';
+    liveText.textContent = currentTextPreview();
+    setHint('正在申请麦克风…');
+
+    session += 1;
+    suppressAutoSend = false;
+    restartCount = 0;
+    startAudio(session).catch(function () {
+      /* 兜底：任何麦克风异常都只提示，不允许未捕获异常 */
+      setHint('麦克风初始化失败，已退回文字输入', true);
+      fallbackToText();
+    });
+    startRecognition();
+  }
+
+  function exitVoiceMode(hint) {
+    state.mode = 'text';
+    stopRecognition();
+    stopAudio();
+    session += 1;
+    promptInput.hidden = false;
+    trackEl.hidden = true;
+    modeBtn.textContent = '🎙';
+    modeBtn.title = '切换到语音输入';
+    if (hint) setHint(hint);
+  }
+
+  /** 麦克风/识别不可用时自动退回文字输入 */
+  function fallbackToText() {
+    if (state.mode === 'voice') exitVoiceMode('已自动切换回文字输入');
+  }
+
+  function toggleMode() {
+    if (state.mode === 'voice') {
+      exitVoiceMode('已切换回文字输入');
+      return;
+    }
+    enterVoiceMode();
+    if (state.mode !== 'voice') {
+      // 兜底：进入语音失败时保持文字输入可用
+      promptInput.hidden = false;
+      trackEl.hidden = true;
+      modeBtn.textContent = '🎙';
+    }
+  }
+
+  /* ==================================================================
+   * 8. 执行：提交任务 + 完成后通知主窗口
+   * ================================================================== */
+  /** 完成后通知主窗口（稍等一会儿，让 Vite 热更新先落到主页面，消息才不会被刷掉） */
+  function notifyOpener(files) {
+    var list = Array.isArray(files) ? files : [];
+    window.setTimeout(function () {
+      try {
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage({ type: 'vibe-admin-dev-applied', files: list }, '*');
+        }
+      } catch (error) {
+        /* 忽略：主窗口可能已关闭 */
+      }
+    }, 1500);
+  }
+
+  function renderResult(record, errorText) {
+    resultCard.hidden = false;
+    resultCard.className = 'result' + (errorText ? ' result--error' : '');
+    resultCard.innerHTML = '';
+
+    var head = document.createElement('div');
+    head.className = 'result__head';
+    var dot = document.createElement('span');
+    dot.className = 'result__dot';
+    head.appendChild(dot);
+    var summary = document.createElement('span');
+    if (errorText) {
+      summary.textContent = '执行失败：' + errorText;
+    } else {
+      summary.textContent = (record && record.ok ? '执行完成' : '执行结束（非 0 退出码）')
+        + ' · 用时 ' + formatDuration(record ? record.duration : 0)
+        + ' · 退出码 ' + (record && record.exitCode != null ? record.exitCode : '—')
+        + ' · ' + formatClock(record ? record.finishedAt : null);
+    }
+    head.appendChild(summary);
+    resultCard.appendChild(head);
+
+    var files = (record && Array.isArray(record.files)) ? record.files : [];
+    if (!errorText && files.length) {
+      var list = document.createElement('ul');
+      list.className = 'result__files';
+      for (var i = 0; i < files.length; i += 1) {
+        var info = statusInfo(files[i].status);
+        var item = document.createElement('li');
+        item.className = 'result__file';
+        var tag = document.createElement('span');
+        tag.className = 'status-tag status-tag--' + info.key;
+        tag.textContent = info.label;
+        var path = document.createElement('span');
+        path.className = 'result__path';
+        path.textContent = files[i].path || '';
+        item.appendChild(tag);
+        item.appendChild(path);
+        list.appendChild(item);
+      }
+      resultCard.appendChild(list);
+    } else if (!errorText) {
+      var empty = document.createElement('p');
+      empty.className = 'result__empty';
+      empty.textContent = '本次没有改动任何文件';
+      resultCard.appendChild(empty);
+    }
+  }
+
+  async function handleGenerate() {
+    if (state.generating) return;
+
+    var prompt = String(state.text || '').trim();
+    if (!prompt) {
+      setHint('请先输入需求', true);
+      return;
+    }
+    if (!TOKEN) {
+      setHint('未登录/请从系统里重新打开', true);
+      return;
+    }
+    if (!state.ready) {
+      setHint(state.readyHint || '开发模式当前不可用', true);
+      return;
+    }
+
+    // 提交时收回麦克风：避免把环境音当成新的需求
+    if (state.mode === 'voice') {
+      stopRecognition();
+      stopAudio();
+    }
+
+    state.generating = true;
+    state.lastResult = null;
+    document.body.classList.add('is-busy');
+    resultCard.hidden = true;
+    setHint('正在执行，请稍候…');
+    syncSendButton();
+
+    try {
+      var data = await api('/generate', {
+        method: 'POST',
+        body: JSON.stringify({ prompt: prompt })
+      });
+
+      var record = data || {};
+      record.prompt = prompt;
+      state.lastResult = record;
+      renderResult(record, '');
+      setHint(record.ok ? '执行完成，已通知主窗口' : ('执行结束但未成功：' + (record.error || '退出码 ' + record.exitCode)));
+      // 成功后清空输入，失败保留内容方便修改重试
+      if (record.ok) {
+        state.text = '';
+        promptInput.value = '';
+      }
+      notifyOpener(record.files);
+    } catch (error) {
+      var message = error && error.message ? error.message : '请求失败';
+      renderResult(null, message);
+      setHint('执行失败：' + message, true);
+    } finally {
+      state.generating = false;
+      document.body.classList.remove('is-busy');
+      syncSendButton();
+      refreshRuns();
+    }
+  }
+
+  /* ==================================================================
+   * 9. Agent 执行过程面板（/dev-agent/runs）
+   * ================================================================== */
+  function panelDetailRecord() {
+    var history = state.runs;
+    var selected = null;
+    for (var i = 0; i < history.length; i += 1) {
+      if (String(history[i].id) === String(state.selectedRunId)) {
+        selected = history[i];
+        break;
+      }
+    }
+    if (!selected) selected = history[0] || null;
+
+    var local = state.lastResult;
+    if (local && (!selected || new Date(local.finishedAt || 0) >= new Date(selected.finishedAt || 0))) {
+      return local;
+    }
+    return selected;
+  }
+
+  function appendSection(parent, title) {
+    var section = document.createElement('div');
+    section.className = 'section';
+    var heading = document.createElement('div');
+    heading.className = 'section__title';
+    heading.textContent = title;
+    section.appendChild(heading);
+    parent.appendChild(section);
+    return section;
+  }
+
+  function appendKeyValue(parent, key, value) {
+    var row = document.createElement('div');
+    row.className = 'kv';
+    var keyEl = document.createElement('span');
+    keyEl.className = 'kv__key';
+    keyEl.textContent = key;
+    var valEl = document.createElement('span');
+    valEl.className = 'kv__val';
+    valEl.textContent = value;
+    row.appendChild(keyEl);
+    row.appendChild(valEl);
+    parent.appendChild(row);
+  }
+
+  function appendFileList(parent, files) {
+    if (!files.length) {
+      var empty = document.createElement('div');
+      empty.className = 'muted';
+      empty.textContent = '本次没有改动文件';
+      parent.appendChild(empty);
+      return;
+    }
+
+    var list = document.createElement('ul');
+    list.className = 'file-list';
+    for (var i = 0; i < files.length; i += 1) {
+      var info = statusInfo(files[i].status);
+      var item = document.createElement('li');
+      item.className = 'file-list__item';
+      var tag = document.createElement('span');
+      tag.className = 'status-tag status-tag--' + info.key;
+      tag.textContent = info.label;
+      var path = document.createElement('span');
+      path.className = 'result__path';
+      path.textContent = files[i].path || '';
+      item.appendChild(tag);
+      item.appendChild(path);
+      list.appendChild(item);
+    }
+    parent.appendChild(list);
+  }
+
+  function appendPre(parent, text) {
+    var pre = document.createElement('pre');
+    pre.className = 'pre';
+    pre.textContent = text || '（无）';
+    parent.appendChild(pre);
+  }
+
+  function renderPanel() {
+    panelBody.innerHTML = '';
+
+    var record = panelDetailRecord();
+    var detail = appendSection(panelBody, '最近一次运行');
+
+    if (!record) {
+      var empty = document.createElement('div');
+      empty.className = 'muted';
+      empty.textContent = '还没有执行记录';
+      detail.appendChild(empty);
+    } else {
+      appendKeyValue(detail, '提示词', record.prompt || '（历史记录未保存提示词）');
+      appendKeyValue(detail, '耗时', formatDuration(record.duration));
+      appendKeyValue(detail, '退出码', record.exitCode == null ? '—' : String(record.exitCode));
+      appendKeyValue(detail, '结束时间', formatClock(record.finishedAt));
+      if (record.error) appendKeyValue(detail, '错误', record.error);
+
+      var filesSection = appendSection(panelBody, '改动文件（' + ((record.files || []).length) + '）');
+      appendFileList(filesSection, record.files || []);
+
+      var outputSection = appendSection(panelBody, 'Agent 最终答复');
+      appendPre(outputSection, record.output);
+
+      var reasonSection = appendSection(panelBody, '推理尾部');
+      appendPre(reasonSection, record.reasoningTail);
+    }
+
+    if (state.runs.length) {
+      var historySection = appendSection(panelBody, '执行历史（' + state.runs.length + '）');
+      var list = document.createElement('ul');
+      list.className = 'history';
+      for (var i = 0; i < state.runs.length; i += 1) {
+        (function (run) {
+          var item = document.createElement('li');
+          item.className = 'history__item'
+            + (String(run.id) === String(state.selectedRunId) ? ' history__item--active' : '');
+          var time = document.createElement('span');
+          time.className = 'history__time';
+          time.textContent = formatClock(run.finishedAt);
+          var prompt = document.createElement('span');
+          prompt.className = 'history__prompt';
+          prompt.textContent = run.prompt || '(无提示词)';
+          var meta = document.createElement('span');
+          meta.className = 'history__time';
+          meta.textContent = formatDuration(run.duration) + ' · ' + ((run.files || []).length) + ' 文件';
+          item.appendChild(time);
+          item.appendChild(prompt);
+          item.appendChild(meta);
+          item.addEventListener('click', function () {
+            state.selectedRunId = run.id;
+            renderPanel();
+          });
+          list.appendChild(item);
+        })(state.runs[i]);
+      }
+      historySection.appendChild(list);
+    }
+  }
+
+  function refreshRuns() {
+    if (!TOKEN) return Promise.resolve();
+    return api('/runs').then(function (data) {
+      state.runs = (data && Array.isArray(data.items)) ? data.items : [];
+      state.runsRunning = !!(data && data.running);
+      if (state.panelOpen) renderPanel();
+      if (state.runsRunning && !state.generating) setHint('后端有一个任务正在执行…');
+    }).catch(function () {
+      /* 忽略：面板刷新失败不打断主流程 */
+    });
+  }
+
+  function openPanel() {
+    state.panelOpen = true;
+    panelEl.hidden = false;
+    panelToggle.setAttribute('aria-expanded', 'true');
+    panelCaret.textContent = '▾';
+    renderPanel();
+    refreshRuns();
+  }
+
+  function closePanel() {
+    state.panelOpen = false;
+    panelEl.hidden = true;
+    panelToggle.setAttribute('aria-expanded', 'false');
+    panelCaret.textContent = '▸';
+  }
+
+  function togglePanel() {
+    if (state.panelOpen) closePanel();
+    else openPanel();
+  }
+
+  /* ==================================================================
+   * 10. 面板背景透明度（localStorage 持久化）
+   * ================================================================== */
+  function applyPanelAlpha(percent) {
+    var value = Math.min(100, Math.max(0, Number(percent)));
+    if (!isFinite(value)) value = 86;
+    document.documentElement.style.setProperty('--panel-alpha', (value / 100).toFixed(2));
+    alphaRange.value = String(Math.round(value));
+  }
+
+  function loadPanelAlpha() {
+    var stored = null;
+    try {
+      stored = window.localStorage.getItem(PANEL_ALPHA_KEY);
+    } catch (error) {
+      stored = null;
+    }
+    applyPanelAlpha(stored == null ? 86 : Number(stored));
+  }
+
+  function handleAlphaInput() {
+    applyPanelAlpha(alphaRange.value);
+    try {
+      window.localStorage.setItem(PANEL_ALPHA_KEY, String(alphaRange.value));
+    } catch (error) {
+      /* 忽略：隐私模式下写不进去 */
+    }
+  }
+
+  /* ==================================================================
+   * 11. 状态与初始化
+   * ================================================================== */
+  function loadStatus() {
+    if (!TOKEN) {
+      setStatus('未登录/请从系统里重新打开', true);
+      state.ready = false;
+      state.readyHint = '未登录/请从系统里重新打开';
+      syncSendButton();
+      return;
+    }
+
+    api('/status').then(function (data) {
+      state.ready = !!(data && data.ready);
+      state.readyHint = (data && data.hint) || '请检查后端运行环境后重试';
+      if (state.ready) {
+        setStatus('dsh 已就绪 · 执行目录 ' + ((data && data.cwd) || '—'));
+        setHint('输入需求后回车发送，或切换到语音输入');
+      } else {
+        setStatus(state.readyHint, true);
+        setHint(state.readyHint, true);
+      }
+      syncSendButton();
+    }).catch(function (error) {
+      state.ready = false;
+      state.readyHint = (error && error.message) || '状态获取失败';
+      setStatus(state.readyHint, true);
+      setHint(state.readyHint, true);
+      syncSendButton();
+    });
+  }
+
+  function bindEvents() {
+    promptInput.addEventListener('input', function () {
+      state.text = promptInput.value;
+    });
+
+    promptInput.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+      event.preventDefault();
+      handleGenerate();
+    });
+
+    sendBtn.addEventListener('click', handleGenerate);
+    modeBtn.addEventListener('click', toggleMode);
+    panelToggle.addEventListener('click', togglePanel);
+    $('panelCloseBtn').addEventListener('click', closePanel);
+    $('refreshBtn').addEventListener('click', function () { refreshRuns(); });
+    alphaRange.addEventListener('input', handleAlphaInput);
+    $('exitBtn').addEventListener('click', function () { window.close(); });
+
+    window.addEventListener('resize', function () {
+      measureStage();
+      if (!sphereNodes.length) initNodes();
+      if (state.mode === 'voice') drawWave();
+    });
+
+    document.addEventListener('visibilitychange', handleVisibility);
+  }
+
+  function boot() {
+    meshCtx = meshCanvas.getContext('2d');
+    loadPanelAlpha();
+    bindEvents();
+    measureStage();
+    initNodes();
+    syncSendButton();
+    startLoop();
+    loadStatus();
+
+    if (!TOKEN) {
+      setHint('未登录/请从系统里重新打开（缺少 token）', true);
+    }
+
+    // 舞台尺寸变化（结果卡片出现、窗口缩放）时重新量一次
+    if (window.ResizeObserver) {
+      var observer = new ResizeObserver(function () {
+        measureStage();
+      });
+      observer.observe(stageEl);
+    }
+    refreshRuns();
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
