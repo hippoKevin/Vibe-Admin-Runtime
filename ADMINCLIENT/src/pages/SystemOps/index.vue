@@ -329,6 +329,10 @@ const aboutGroups = computed(() => {
         { label: 'dbUser', value: data.database.username || '-' },
         { label: 'dbVersion', value: data.database.version || '-' },
         { label: 'dbLatency', value: `${data.database.latency ?? '-'} ms` },
+        // 连接失败时把错误原因也带出来，方便排查
+        ...(data.database.error
+          ? [{ label: 'dbError', value: String(data.database.error) }]
+          : []),
       ],
     },
     {
@@ -345,11 +349,6 @@ const aboutGroups = computed(() => {
       ],
     },
   ]
-
-  // 数据库连接失败时把错误原因也带出来，方便排查
-  if (data.database?.error) {
-    groups[3].rows.push({ label: 'dbError', value: String(data.database.error) })
-  }
 
   return groups
 })
@@ -636,7 +635,8 @@ async function submitEnv(items: { key: string; value: string }[]) {
  * 探测接口是公开的，不需要 token。
  */
 async function waitForRestart() {
-  const loading = MessagePlugin.loading({ content: t('systemOps.restarting'), duration: 0 })
+  // MessagePlugin.loading 返回的是 Promise<MessageInstance>，需要 await 才能拿到 close
+  const loading = await MessagePlugin.loading({ content: t('systemOps.restarting'), duration: 0 })
 
   // 先等重启延迟（后端 1s）与服务停止，再开始探测
   await sleep(2000)
@@ -646,7 +646,7 @@ async function waitForRestart() {
     try {
       const res = await axios.get('/proxy/hippoadmin/system-ops/ping', { timeout: 3000 })
       if (res.data?.code === 2000) {
-        loading.close?.()
+        loading.close()
         MessagePlugin.success(t('systemOps.restartDone'))
         setTimeout(() => window.location.reload(), 800)
         return
@@ -657,7 +657,7 @@ async function waitForRestart() {
     await sleep(1500)
   }
 
-  loading.close?.()
+  loading.close()
   MessagePlugin.warning(t('systemOps.restartTimeout'))
 }
 
