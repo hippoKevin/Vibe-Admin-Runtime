@@ -94,7 +94,7 @@ import * as api from "./api"
 // 子页面
 import AddRoute from './components/AddRoute/addRoute.vue';
 import UpdateRoute from './components/UpdateRoute/updateRoute.vue';
-import AddSubMenuRoute from './components/AddSubMenuRoute/addSubMenuRoute.vue';
+import AddSubMenuRoute from './components/AddSubmenuRoute/addSubmenuRoute.vue';
 import OperationAdmin from './components/OperationAdmin/operationAdmin.vue';
 
 const { t } = useI18n()

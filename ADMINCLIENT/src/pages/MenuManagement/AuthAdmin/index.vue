@@ -90,8 +90,8 @@ const { t } = useI18n()
 const { rawColumns, displayColumns: tableColumns, setColumns, toSubmitColumns, restoreRawTitles } = useColumnConfig()
 
 // Sub Pages 
-import UpdateRole from "./components/UpdateRole/updateRole.vue"
-import SettingRole from "./components/SettingRole/settingRole.vue"
+import UpdateRole from "./components/updateRole/updateRole.vue"
+import SettingRole from "./components/settingRole/settingRole.vue"
 import AddRole from "./components/addRole/addRole.vue"
 
 
