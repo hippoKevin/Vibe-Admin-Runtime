@@ -15,7 +15,7 @@ import * as path from 'path';
 export interface JwtPayload {
   sub: number;    // 用户ID
   username: string;// 用户名
-  role_id: number; // 权限等级（和user.role_name一致）
+  role_id: number; // 权限等级（对应 user_list.role_id，必须是数字，权限校验靠它）
 }
 
 @Injectable()
@@ -57,10 +57,12 @@ export class CommonService {
 
 
     // 4. 生成token
+    // 注意：role_id 必须取 user.role_id（数字），user.role_name 是角色名称字符串，
+    // 写进去会让操作权限校验（role_operation.role_id）永远匹配不到，所有带权限的接口都报 4003
     const payload = {
       sub: user.user_id,
       username: user.username,
-      role_id: user.role_name
+      role_id: user.role_id
     };
 
     const token = this.jwtService.sign(payload);

@@ -10,7 +10,7 @@
                         <t-icon :name="item.menu_icon" :size="16"/>
                     </template> -->
                     <template #icon>
-                        <component :size="16" :is="icon[manifest.find(f => f.stem == item.menu_icon).icon + 'Icon']" />
+                        <component :size="16" :is="getMenuIconComponent(item.menu_icon)" />
                     </template>
                     <sub-menu :subMenuList="item.children" />                
                 </t-submenu>
@@ -54,8 +54,8 @@
 
 <script lang="ts" setup>
     import { ref, onBeforeUnmount } from 'vue';
-    import { manifest } from 'tdesign-icons-vue-next';
     import * as icon from 'tdesign-icons-vue-next';
+    import { getMenuIconComponent } from '@/utils/menuIcon';
     import { useMenuStore } from '@/stores/menuStore';
     import { useUserStore } from '@/stores/userStore';
     import SubMenu from "./SubMenu.vue";

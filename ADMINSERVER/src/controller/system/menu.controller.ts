@@ -154,7 +154,7 @@ export class MenuController {
     addOperation(@Body() createOperationDto: CreateOperationDto) {
     return this.menuService.addOperation(createOperationDto);
     }
-s
+
     // 删除操作
     @Get('/deleteOperation')
     @UseGuards(AuthGuard('jwt'), PermissionGuard)
