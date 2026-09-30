@@ -106,6 +106,8 @@
     box-shadow: var(--td-shadow-2);
     z-index: 2000;
     overflow: hidden;
+    transform-origin: top left;
+    animation: menu-search-panel-in 0.18s ease-out;
 }
 
 .menu-search-results {
@@ -128,8 +130,10 @@
         font-size: calc(13px * var(--app-font-scale, 1));
         color: var(--td-text-color-secondary);
         cursor: pointer;
+        transition: background 0.18s ease, color 0.18s ease, padding-left 0.18s ease;
 
         &.active {
+            padding-left: 18px;
             background: var(--td-bg-color-container);
             color: var(--td-text-color-primary);
             font-weight: 600;
@@ -138,6 +142,11 @@
         .menu-search-category-count {
             font-size: calc(12px * var(--app-font-scale, 1));
             color: var(--td-text-color-placeholder);
+            transition: transform 0.18s ease;
+        }
+
+        &.active .menu-search-category-count {
+            transform: scale(1.15);
         }
     }
 }
@@ -151,9 +160,19 @@
         padding: 10px 12px;
         border-radius: var(--td-radius-default);
         cursor: pointer;
+        transition: background 0.15s ease, transform 0.15s ease;
+        animation: menu-search-item-in 0.22s ease-out;
 
         &:hover {
+            transform: translateX(2px);
             background: var(--td-bg-color-secondarycontainer);
+        }
+
+        // 逐条错开进场，切换分类或继续输入时更有"活"的感觉
+        @for $i from 2 through 6 {
+            &:nth-child(#{$i}) {
+                animation-delay: #{($i - 1) * 0.03}s;
+            }
         }
     }
 }
@@ -170,9 +189,11 @@
     margin-top: 2px;
 }
 
-.menu-search-highlight {
+/* 高亮是 v-html 注入的节点，不会被加上 scoped 属性，必须用 :deep 才能命中 */
+.menu-search-panel :deep(.menu-search-highlight) {
     color: var(--td-brand-color);
     font-weight: 700;
+    animation: menu-search-highlight-pop 0.9s ease-out;
 }
 
 .menu-search-empty {
@@ -195,6 +216,7 @@
 
     .menu-search-recent-item {
         position: relative;
+        animation: menu-search-item-in 0.22s ease-out;
         display: flex;
         flex-direction: column;
         padding: 8px 32px 8px 12px;
@@ -253,5 +275,51 @@
     &:hover::after,
     &:active::after {
         background-color: var(--td-brand-color);
+    }
+}
+
+/* ==================== 顶栏菜单搜索动效 ==================== */
+/* 面板下落 + 条目错峰淡入 + 匹配文字轻微脉冲。
+   打字时高亮会重新渲染，脉冲动效随之重播，视觉上"跟着输入在动"。 */
+@keyframes menu-search-panel-in {
+    from {
+        opacity: 0;
+        transform: translateY(-6px) scale(0.98);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes menu-search-item-in {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes menu-search-highlight-pop {
+    from {
+        background-color: var(--td-brand-color-light);
+    }
+
+    to {
+        background-color: transparent;
+    }
+}
+
+/* 尊重系统"减少动态效果"设置 */
+@media (prefers-reduced-motion: reduce) {
+    .menu-search-panel,
+    .menu-search-detail-item,
+    .menu-search-highlight,
+    .menu-search-recent-item {
+        animation: none !important;
+        transition: none !important;
     }
 }

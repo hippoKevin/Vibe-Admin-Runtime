@@ -90,7 +90,8 @@ export default {
     moreFiles: 'and {count} more files',
     reloadTip: 'Reloading in {seconds}s',
     notLoggedIn: 'Not signed in, please sign in before using Dev Mode',
-    popupBlocked: 'The browser blocked the Dev Mode console window, please allow pop-ups and retry',
+    overlayTitle: 'Dev Mode Console',
+    close: 'Close dev mode',
     appliedJump: 'Jumped to the modified page: {name}',
     appliedNoMatch: 'No page matches this change, staying on the current page',
     fileStatus: {
@@ -827,6 +828,7 @@ export default {
     'Skill 管理': 'Skills',
     'Agent 管理': 'Agents',
     'Tool 管理': 'Tools',
+    '顶级菜单': 'Top Level',
   },
   columnTitles: {
     '序号': 'No.',

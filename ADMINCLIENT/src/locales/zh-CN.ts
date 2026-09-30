@@ -90,7 +90,8 @@ export default {
     moreFiles: '等 {count} 个文件',
     reloadTip: '{seconds} 秒后刷新查看结果',
     notLoggedIn: '未登录，请先登录后再使用开发模式',
-    popupBlocked: '浏览器拦截了开发模式控制台窗口，请允许弹出窗口后重试',
+    overlayTitle: '开发模式控制台',
+    close: '关闭开发模式',
     appliedJump: '已跳转到被修改的页面：{name}',
     appliedNoMatch: '本次改动没有对应的页面，未跳转',
     fileStatus: {
@@ -827,6 +828,7 @@ export default {
     'Skill 管理': 'Skill 管理',
     'Agent 管理': 'Agent 管理',
     'Tool 管理': 'Tool 管理',
+    '顶级菜单': '顶级菜单',
   },
   columnTitles: {
     '序号': '序号',

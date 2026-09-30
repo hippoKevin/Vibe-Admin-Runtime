@@ -27,7 +27,7 @@
                             <div v-for="(group, idx) in groupedResults" :key="group.catalog"
                                 class="menu-search-category-item" :class="{ active: idx === activeCatalogIndex }"
                                 @mousedown.prevent="activeCatalogIndex = idx">
-                                <span class="menu-search-category-name">{{ group.catalog }}</span>
+                                <span class="menu-search-category-name">{{ translateCatalog(group.catalog) }}</span>
                                 <span class="menu-search-category-count">{{ group.items.length }}</span>
                             </div>
                         </div>
@@ -37,7 +37,7 @@
                                 <div class="menu-search-item-name"
                                     v-html="highlightMatch(translateServerText(item.menu_name), menuSearchText)">
                                 </div>
-                                <div class="menu-search-item-catalog">{{ item.catalog ? translateServerText(item.catalog) : $t('header.topMenu') }}</div>
+                                <div class="menu-search-item-catalog">{{ item.catalog ? translateCatalog(item.catalog) : $t('header.topMenu') }}</div>
                             </div>
                         </div>
                     </div>
@@ -269,6 +269,16 @@ const activeGroupItems = computed(() => groupedResults.value[activeCatalogIndex.
 // ── 关键字高亮 ──────────────────────────────────────────────
 function escapeHtml(str: string) {
     return str.replace(/[&<>"']/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[s] as string))
+}
+
+/** 目录名可能是「父级 / 子级」拼起来的路径，逐段翻译，否则整串都查不到映射、只能显示中文 */
+function translateCatalog(catalog: string | null | undefined) {
+    const text = String(catalog || '').trim()
+    if (!text) return ''
+    return text
+        .split(' / ')
+        .map((part) => translateServerText(part))
+        .join(' / ')
 }
 
 function highlightMatch(text: string, keyword: string) {
