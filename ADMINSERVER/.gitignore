@@ -12,6 +12,9 @@ yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
 
+# 系统运维：env 文件保存前的自动备份
+/backup
+
 # OS
 .DS_Store
 
