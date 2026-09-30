@@ -8,11 +8,20 @@ html,body {
 }
 
 /* ==================== 页面亮度 ==================== */
-/* 亮度由 src/utils/theme.ts 写入 html 的 --app-brightness-filter 变量来控制。
-   默认值为 none：此时 body 不生成 filter 包含块，position: fixed 弹层定位不受影响。 */
-body {
-    filter: var(--app-brightness-filter, none);
-    transition: filter 0.2s ease;
+/* 亮度由 src/utils/theme.ts 写入 html 的 --app-dim-opacity（0 ~ 0.5），
+   这里用一层不接收鼠标事件的黑色遮罩压暗整个界面。
+   ⚠️ 不要改成 body { filter: brightness() }：filter 会让 body 成为 position: fixed
+   后代的包含块，挂在 body 上的浮层会转为参与文档流并把文档撑高，
+   滚到底部就会露出一条白块（实测 1300px 视口被撑到 1356px）。 */
+body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    pointer-events: none;
+    background: #000;
+    opacity: var(--app-dim-opacity, 0);
+    transition: opacity 0.2s ease;
 }
 
 /* ==================== 页面字号缩放 ==================== */

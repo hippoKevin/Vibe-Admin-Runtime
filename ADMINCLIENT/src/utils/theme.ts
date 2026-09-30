@@ -27,9 +27,9 @@ export const themeMode = useStorage<'light' | 'dark'>('theme-mode', 'light')
 /** 页面亮度存储 key */
 export const BRIGHTNESS_STORAGE_KEY = 'theme-brightness'
 
-/** 亮度可调范围（百分比），100 表示原始亮度 */
+/** 亮度可调范围（百分比），100 表示原始亮度；只支持调暗，原因见 applyBrightness */
 export const BRIGHTNESS_MIN = 50
-export const BRIGHTNESS_MAX = 150
+export const BRIGHTNESS_MAX = 100
 export const BRIGHTNESS_DEFAULT = 100
 
 /** 页面亮度（与 localStorage 双向同步，单位 %） */
@@ -135,23 +135,28 @@ export function getBrightness(): number {
 }
 
 /**
- * 应用页面亮度：通过 html 上的 CSS 变量驱动 body 的 filter: brightness()
- * （变量定义在 assets/styles/main.css 中）。
+ * 应用页面亮度：通过 html 上的 --app-dim-opacity 控制一层黑色遮罩的透明度
+ * （遮罩定义在 assets/styles/main.css 的 body::after）。
  *
- * 亮度为 100% 时会移除变量，使 body 完全不设置 filter：
- * 因为 filter 会为 position: fixed 的后代生成包含块，
- * 弹窗遮罩、popup 等固定定位元素在 100% 时保持原生定位行为。
+ * 为什么不用 body { filter: brightness() }：
+ * filter 会让 body 成为 position: fixed 后代的包含块，挂在 body 上的浮层
+ * （TDesign 弹层、vue-devtools 悬浮球等）就不再相对视口定位，而是转为参与文档流，
+ * 把文档撑高——实测视口 1300px 时文档高度变成 1356px，滚到底部会露出一条白块。
+ * 遮罩方案完全不参与布局，因此没有这个副作用。
+ *
+ * 同理也不再支持「调亮」：调亮只能靠 filter，会重新引入上述问题。
  */
 export function applyBrightness(value: unknown = getBrightness()) {
   const brightness = clampBrightness(value)
   const style = document.documentElement.style
+  const dim = (BRIGHTNESS_DEFAULT - brightness) / 100
 
-  if (brightness === BRIGHTNESS_DEFAULT) {
-    style.removeProperty('--app-brightness-filter')
+  if (dim <= 0) {
+    style.removeProperty('--app-dim-opacity')
     return
   }
 
-  style.setProperty('--app-brightness-filter', `brightness(${brightness / 100})`)
+  style.setProperty('--app-dim-opacity', String(dim))
 }
 
 /** 设置并持久化页面亮度 */
