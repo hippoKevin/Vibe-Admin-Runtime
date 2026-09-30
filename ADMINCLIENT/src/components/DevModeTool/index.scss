@@ -1,0 +1,430 @@
+/* ===== 开发模式：整屏神经网络律动 + 正中一颗球（无面板 / 无遮罩） ===== */
+
+/* ── 整屏神经网络层（只画，不接收鼠标事件） ── */
+.dev-mesh {
+  position: fixed;
+  inset: 0;
+  z-index: 2999;
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+}
+
+/* 以视口正中为原点的零点容器：子元素都以它为中心定位 */
+.dev-ball {
+  position: fixed;
+  z-index: 3000;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  /* 由脚本实时写入：球缩放（1 + 音量 * 0.15）与音量 0~1 */
+  --dev-ball-scale: 1;
+  --dev-level: 0;
+}
+
+/* ── 中心神经网络主体的点击热区（视觉全部画在整屏 canvas 上） ── */
+.dev-ball__core {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  width: 252px;
+  height: 252px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+  transition: opacity 460ms ease;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* 执行中：中心主体已散开淡出，热区也一并让开，点击穿透到页面 */
+.dev-ball--busy .dev-ball__core {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── 待机/聆听：扩散到整屏的淡淡涟漪 ───── */
+.dev-ball__ripple {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100vw, 100vh);
+  height: max(100vw, 100vh);
+  border: 1px solid rgba(124, 92, 255, 0.5);
+  border-radius: 50%;
+  opacity: 0;
+  animation: dev-ball-ripple 7.5s ease-out infinite;
+  will-change: transform, opacity;
+}
+
+.dev-ball__ripple--2 {
+  animation-delay: 2.5s;
+}
+
+.dev-ball__ripple--3 {
+  animation-delay: 5s;
+}
+
+@keyframes dev-ball-ripple {
+  0% {
+    transform: translate(-50%, -50%) scale(calc(0.06 * var(--dev-ball-scale, 1)));
+    opacity: calc(0.09 + var(--dev-level, 0) * 0.14);
+  }
+
+  100% {
+    transform: translate(-50%, -50%) scale(1.25);
+    opacity: 0;
+  }
+}
+
+/* ── 执行中：整屏向外释放的波纹 ───────── */
+.dev-ball__rings {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 460ms ease;
+}
+
+.dev-ball--busy .dev-ball__rings {
+  opacity: 1;
+}
+
+.dev-ball__ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100vw, 100vh);
+  height: max(100vw, 100vh);
+  border: 1px solid rgba(124, 92, 255, 0.85);
+  border-radius: 50%;
+  box-shadow: 0 0 22px rgba(124, 92, 255, 0.3);
+  opacity: 0;
+}
+
+.dev-ball--busy .dev-ball__ring {
+  animation: dev-ball-release 3.4s cubic-bezier(0.25, 0.6, 0.35, 1) infinite;
+}
+
+.dev-ball--busy .dev-ball__ring--1 {
+  animation-delay: 0s;
+  border-color: rgba(94, 231, 255, 0.85);
+}
+
+.dev-ball--busy .dev-ball__ring--2 {
+  animation-delay: 0.85s;
+}
+
+.dev-ball--busy .dev-ball__ring--3 {
+  animation-delay: 1.7s;
+  border-color: rgba(255, 110, 199, 0.75);
+}
+
+.dev-ball--busy .dev-ball__ring--4 {
+  animation-delay: 2.55s;
+}
+
+@keyframes dev-ball-release {
+  0% {
+    transform: translate(-50%, -50%) scale(0.06);
+    opacity: 0.85;
+  }
+
+  100% {
+    transform: translate(-50%, -50%) scale(1.3);
+    opacity: 0;
+  }
+}
+
+/* 执行中：待机的整屏涟漪让位给释放波纹（动画里的 opacity 优先级更高，必须停掉动画） */
+.dev-ball--busy .dev-ball__ripple {
+  opacity: 0;
+  animation: none;
+}
+
+/* ── 两个很小的按钮（球的右上角，hover 才明显） ── */
+.dev-ball__actions {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  gap: 4px;
+  opacity: 0.42;
+  transform: translate(58px, -132px);
+  transition: opacity 220ms ease;
+}
+
+.dev-ball__actions:hover {
+  opacity: 1;
+}
+
+.dev-ball__action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--td-bg-color-container);
+  color: var(--td-text-color-secondary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: color 200ms ease;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.dev-ball__action:hover {
+  color: var(--td-brand-color);
+}
+
+/* ── 球上方的信息区 / 输入框（不挡页面操作） ── */
+.dev-ball__stack {
+  position: absolute;
+  bottom: 158px;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 268px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.dev-ball__info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 100%;
+  font-size: calc(11px * var(--app-font-scale, 1));
+  line-height: 1.5;
+  text-align: center;
+  color: var(--td-text-color-secondary);
+  /* 用容器底色描边，保证浮在任意内容上都可读，同时不出现"背景块" */
+  text-shadow:
+    0 0 4px var(--td-bg-color-container),
+    0 0 8px var(--td-bg-color-container),
+    0 0 12px var(--td-bg-color-container);
+}
+
+.dev-ball__line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.dev-ball__line--error {
+  color: var(--td-error-color);
+}
+
+.dev-ball__title {
+  color: var(--td-text-color-primary);
+}
+
+.dev-ball__clamp {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  word-break: break-word;
+}
+
+.dev-ball__text {
+  margin: 0;
+  color: var(--td-text-color-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 长文本/JSON 一律截断在 3 行内 */
+.dev-ball__text--clamp {
+  display: -webkit-box;
+  overflow: hidden;
+  max-height: calc(3 * 1.5em);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.dev-ball__files {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 84px;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dev-ball__file {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.dev-ball__file-status {
+  flex-shrink: 0;
+  padding: 0 4px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 3px;
+  background: var(--td-bg-color-container);
+  font-size: calc(10px * var(--app-font-scale, 1));
+  color: var(--td-text-color-secondary);
+}
+
+.dev-ball__file-status--added {
+  color: var(--td-success-color);
+}
+
+.dev-ball__file-status--deleted {
+  color: var(--td-error-color);
+}
+
+.dev-ball__file-status--modified {
+  color: var(--td-brand-color);
+}
+
+.dev-ball__file-status--untracked {
+  color: var(--td-warning-color);
+}
+
+.dev-ball__file-path {
+  overflow: hidden;
+  color: var(--td-text-color-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dev-ball__more {
+  font-size: calc(10px * var(--app-font-scale, 1));
+  color: var(--td-text-color-placeholder);
+}
+
+.dev-ball__more--brand {
+  color: var(--td-brand-color);
+}
+
+.dev-ball__input {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  pointer-events: auto;
+}
+
+.dev-ball__field {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 13px;
+  outline: none;
+  background: var(--td-bg-color-container);
+  color: var(--td-text-color-primary);
+  font-size: calc(11px * var(--app-font-scale, 1));
+}
+
+.dev-ball__field::placeholder {
+  color: var(--td-text-color-placeholder);
+}
+
+.dev-ball__field:focus {
+  border-color: var(--td-brand-color);
+}
+
+.dev-ball__send {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--td-brand-color);
+  color: #fff;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.dev-ball__spin-icon {
+  flex-shrink: 0;
+  animation: dev-ball-rotate 1s linear infinite;
+}
+
+@keyframes dev-ball-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── 白色波形音轨（球下方，可上下拖动） ── */
+.dev-ball__track {
+  position: absolute;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  cursor: ns-resize;
+  pointer-events: auto;
+  touch-action: none;
+  transform: translateX(-50%);
+  transition: opacity 320ms ease;
+  user-select: none;
+}
+
+.dev-ball__track--hidden .dev-ball__wave {
+  opacity: 0;
+}
+
+.dev-ball__handle {
+  width: 26px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
+}
+
+.dev-ball__wave {
+  display: block;
+  width: 264px;
+  height: 40px;
+  transition: opacity 320ms ease;
+}
+
+/* ── 品牌名（固定字符串，不翻译） ─────── */
+.dev-ball__brand {
+  font-family: consolas, menlo, monaco, 'courier new', monospace;
+  font-size: calc(10px * var(--app-font-scale, 1));
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.96);
+  white-space: nowrap;
+  /* 白色字配深色描边，深浅两种页面主题下都清晰 */
+  text-shadow:
+    0 1px 2px rgba(6, 10, 26, 0.85),
+    0 0 5px rgba(6, 10, 26, 0.7),
+    0 0 10px rgba(6, 10, 26, 0.5);
+}

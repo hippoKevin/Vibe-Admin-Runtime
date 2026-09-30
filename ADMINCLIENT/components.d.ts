@@ -12,6 +12,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    DevModeTool: typeof import('./src/components/DevModeTool/index.vue')['default']
     FontScaleTool: typeof import('./src/components/FontScaleTool/index.vue')['default']
     ImageReview: typeof import('./src/components/ImageReview/imageReview.vue')['default']
     ImageReviewPopup: typeof import('./src/components/ImageReview/ImageReviewPopup/imageReviewPopup.vue')['default']
@@ -82,6 +83,7 @@ declare module 'vue' {
 
 // For TSX support
 declare global {
+  const DevModeTool: typeof import('./src/components/DevModeTool/index.vue')['default']
   const FontScaleTool: typeof import('./src/components/FontScaleTool/index.vue')['default']
   const ImageReview: typeof import('./src/components/ImageReview/imageReview.vue')['default']
   const ImageReviewPopup: typeof import('./src/components/ImageReview/ImageReviewPopup/imageReviewPopup.vue')['default']

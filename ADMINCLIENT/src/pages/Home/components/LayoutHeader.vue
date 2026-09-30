@@ -61,6 +61,9 @@
         </t-space>
         <template #operations>
             <t-space align="center" size="small">
+                <!-- 开发模式（语音 → AI 改代码） -->
+                <dev-mode-tool />
+
                 <!-- 主题配置（主题色 + 暗黑模式 + 亮度） -->
                 <theme-switcher />
 
