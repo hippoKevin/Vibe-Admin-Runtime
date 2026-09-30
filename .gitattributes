@@ -1,0 +1,8 @@
+# 统一换行符
+# Windows 上 core.autocrlf=true 会把文件转成 CRLF，
+# 而 shell 脚本带 \r 在 Linux（CI / 服务器）上会报 "bad interpreter"，
+# 因此这里对脚本与 CI 配置强制 LF。
+*.sh text eol=lf
+*.bash text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
