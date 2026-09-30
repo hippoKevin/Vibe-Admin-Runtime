@@ -10,11 +10,11 @@
 
         <div class="left">
             <div class="logo">
-                <img src="./assets/Logo.png" alt="logo" />
+                <img src="./assets/logo.png" alt="logo" />
                 <span>Admin For Entrepreneur</span>
             </div>
             <div class="background">
-                <img src="./assets/Background.png" alt="background" />
+                <img src="./assets/background.png" alt="background" />
                 <login-particles />
             </div>
         </div>
