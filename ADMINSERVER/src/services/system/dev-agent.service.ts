@@ -84,8 +84,8 @@ export class DevAgentService {
     /** 同一时间只允许一个任务在跑 */
     private running = false;
 
-    /** 最近一次执行结果 */
-    private lastRun: DevAgentRunResult | null = null;
+    /** 最近一次执行结果（带 channel/running，前端刷新后也能量对通道样式） */
+    private lastRun: DevAgentRunRecord | null = null;
 
     /** 执行历史（新的在前） */
     private readonly runs: DevAgentRunRecord[] = [];
@@ -186,6 +186,18 @@ export class DevAgentService {
                 files,
                 finishedAt: result.finishedAt,
             });
+
+            // 同时记成本次结果，刷新后 /status 也能还原（带 channel，前端才知道用哪个通道的样式展示）
+            this.lastRun = {
+                ...result,
+                id: String(startedAt),
+                channel: 'reply',
+                prompt: dto.prompt,
+                startedAt: new Date(startedAt).toISOString(),
+                running: false,
+                output: answer,
+                reasoningTail: this.tail(run.stderr, STDERR_LIMIT),
+            };
 
             this.logger.log(`开发模式-简短回复：用时=${result.duration}ms 长度=${answer.length} 改动文件=${files.length}`);
             return result;
