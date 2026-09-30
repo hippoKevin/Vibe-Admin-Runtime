@@ -3,7 +3,7 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { BusinessException } from 'src/common/exceptions/business.exception';
-import { GenerateCodeDto } from 'src/dto/system/dev-agent/dev-agent.dto';
+import { DevAgentChannel, GenerateCodeDto } from 'src/dto/system/dev-agent/dev-agent.dto';
 
 /** 单次任务的超时时间（毫秒），可用 DSH_AGENT_TIMEOUT 覆盖 */
 const DEFAULT_TIMEOUT = 5 * 60 * 1000;
@@ -54,10 +54,20 @@ export interface DevAgentRunRecord extends DevAgentRunResult {
     id: string;
     prompt: string;
     startedAt: string;
+    /** 通道：reply 简短回复 / code 后台执行代码 */
+    channel: DevAgentChannel;
+    /** 是否仍在后台运行中（前端据此显示进度） */
+    running?: boolean;
 }
 
 /** 最多保留多少条执行历史（内存态，重启即清空） */
 const MAX_RUN_HISTORY = 20;
+
+/** 简短回复通道返回的最大长度（TTS 念太长的没意义） */
+const REPLY_LIMIT = 600;
+
+/** 简短回复通道的默认超时（比改代码短得多） */
+const REPLY_TIMEOUT = 90 * 1000;
 
 /**
  * 开发模式服务：把一句话任务交给 DeepSeek Harness 执行
@@ -113,63 +123,71 @@ export class DevAgentService {
     }
 
     /**
-     * 执行一次生成任务
-     * @param dto 任务描述
+     * 入口：按通道分发
+     * - reply：简短回复，同步返回最终答复（前端用 TTS 播报）
+     * - code：后台执行，立刻返回 runId，前端轮询 /runs 看进度
      */
-    async generate(dto: GenerateCodeDto): Promise<DevAgentRunResult> {
-        if (this.running) {
-            throw new BusinessException('已有一个任务正在执行，请等它结束');
-        }
+    async generate(dto: GenerateCodeDto) {
+        const channel: DevAgentChannel = dto.channel === 'reply' ? 'reply' : 'code';
+        return channel === 'reply' ? this.reply(dto) : this.startBackgroundRun(dto);
+    }
 
-        const launcher = this.resolveLauncher();
-        if (!launcher) {
-            throw new BusinessException(
-                '未找到 dsh：请安装 DeepSeek Harness，或设置 DSH_INSTALL_DIR / DSH_CLI_PATH',
-            );
-        }
-
+    /**
+     * 简短回复通道：同步跑一次，只要最终答复
+     * 会在 prompt 里明确要求「不要改动任何文件」，跑完仍然对比一次工作区，
+     * 万一它擅自改了文件，也会如实报出来。
+     */
+    private async reply(dto: GenerateCodeDto) {
+        const launcher = this.requireLauncher();
         const cwd = this.resolveCwd(dto.cwd);
-        if (!fs.existsSync(cwd)) {
-            throw new BusinessException(`执行目录不存在：${cwd}`);
-        }
 
         this.running = true;
         const startedAt = Date.now();
 
         try {
-            // 先记录执行前的工作区状态，好把「这次任务改的」和「原本就有的改动」区分开
             const before = await this.collectChangedFiles(cwd);
+            const prompt = [
+                'Answer the question below briefly: one or two sentences, in the same language as the question.',
+                'Do NOT modify, create or delete any file.',
+                '',
+                dto.prompt,
+            ].join('\n');
 
-            const run = await this.spawnAgent(launcher, cwd, dto.prompt);
-
+            const run = await this.spawnAgent(launcher, cwd, prompt, this.resolveReplyTimeout());
             const after = await this.collectChangedFiles(cwd);
             const beforeStatus = new Map(before.map((item) => [item.path, item.status]));
             const files = after.filter((item) => beforeStatus.get(item.path) !== item.status);
 
-            const result: DevAgentRunResult = {
+            const answer =
+                this.tail(run.stdout, REPLY_LIMIT) ||
+                (run.timedOut ? '（回复超时，请重试）' : '（没有拿到回复）');
+
+            const result = {
+                channel: 'reply' as const,
+                answer,
                 ok: run.exitCode === 0,
                 exitCode: run.exitCode,
                 duration: Date.now() - startedAt,
-                output: this.tail(run.stdout, STDOUT_LIMIT),
-                reasoningTail: this.tail(run.stderr, STDERR_LIMIT),
                 files,
                 finishedAt: new Date().toISOString(),
-                error: run.timedOut ? '执行超时，已被强制结束' : undefined,
             };
 
-            this.lastRun = result;
-            this.runs.unshift({
-                ...result,
+            this.pushRun({
                 id: String(startedAt),
+                channel: 'reply',
                 prompt: dto.prompt,
                 startedAt: new Date(startedAt).toISOString(),
+                running: false,
+                ok: result.ok,
+                exitCode: result.exitCode,
+                duration: result.duration,
+                output: answer,
+                reasoningTail: this.tail(run.stderr, STDERR_LIMIT),
+                files,
+                finishedAt: result.finishedAt,
             });
-            if (this.runs.length > MAX_RUN_HISTORY) this.runs.length = MAX_RUN_HISTORY;
 
-            this.logger.log(
-                `开发模式任务结束：exit=${result.exitCode} 用时=${result.duration}ms 改动文件=${files.length}`,
-            );
-
+            this.logger.log(`开发模式-简短回复：用时=${result.duration}ms 长度=${answer.length} 改动文件=${files.length}`);
             return result;
         } finally {
             this.running = false;
@@ -177,9 +195,109 @@ export class DevAgentService {
     }
 
     /**
+     * 后台执行通道：立刻返回，任务在后台跑，结果写进执行历史
+     */
+    private startBackgroundRun(dto: GenerateCodeDto) {
+        const launcher = this.requireLauncher();
+        const cwd = this.resolveCwd(dto.cwd);
+
+        const startedAt = Date.now();
+        const record: DevAgentRunRecord = {
+            id: String(startedAt),
+            channel: 'code',
+            prompt: dto.prompt,
+            startedAt: new Date(startedAt).toISOString(),
+            running: true,
+            ok: false,
+            exitCode: null,
+            duration: 0,
+            output: '',
+            reasoningTail: '',
+            files: [],
+            finishedAt: '',
+        };
+
+        // 先占位入历史，前端一提交就能在 /runs 里看到 running 状态
+        this.running = true;
+        this.pushRun(record);
+
+        // 故意不 await：把控制权立刻交回前端
+        void this.executeBackground(launcher, cwd, dto.prompt, record, startedAt);
+        this.logger.log(`开发模式-后台任务已启动：id=${record.id}`);
+
+        return {
+            channel: 'code' as const,
+            runId: record.id,
+            started: true,
+            running: true,
+            startedAt: record.startedAt,
+        };
+    }
+
+    /** 后台执行体：跑完把结果写回同一条历史记录（前端轮询即可看到状态翻转） */
+    private async executeBackground(
+        launcher: DshLauncher,
+        cwd: string,
+        prompt: string,
+        record: DevAgentRunRecord,
+        startedAt: number,
+    ) {
+        try {
+            const before = await this.collectChangedFiles(cwd);
+            const run = await this.spawnAgent(launcher, cwd, prompt, this.resolveTimeout());
+            const after = await this.collectChangedFiles(cwd);
+            const beforeStatus = new Map(before.map((item) => [item.path, item.status]));
+
+            record.files = after.filter((item) => beforeStatus.get(item.path) !== item.status);
+            record.exitCode = run.exitCode;
+            record.ok = run.exitCode === 0;
+            record.duration = Date.now() - startedAt;
+            record.output = this.tail(run.stdout, STDOUT_LIMIT);
+            record.reasoningTail = this.tail(run.stderr, STDERR_LIMIT);
+            record.finishedAt = new Date().toISOString();
+            record.running = false;
+            record.error = run.timedOut ? '执行超时，已被强制结束' : undefined;
+
+            this.lastRun = { ...record };
+            this.logger.log(
+                `开发模式-后台任务结束：id=${record.id} exit=${record.exitCode} 用时=${record.duration}ms 改动文件=${record.files.length}`,
+            );
+        } catch (error: any) {
+            record.running = false;
+            record.ok = false;
+            record.finishedAt = new Date().toISOString();
+            record.error = error?.message || String(error);
+            this.logger.error(`开发模式-后台任务失败：id=${record.id} ${record.error}`);
+        } finally {
+            this.running = false;
+        }
+    }
+
+    /** 取启动器，取不到就抛业务异常 */
+    private requireLauncher(): DshLauncher {
+        const launcher = this.resolveLauncher();
+        if (!launcher) {
+            throw new BusinessException(
+                '未找到 dsh：请安装 DeepSeek Harness，或设置 DSH_INSTALL_DIR / DSH_CLI_PATH',
+            );
+        }
+        if (this.running) {
+            throw new BusinessException('已有一个任务正在执行，请等它结束');
+        }
+        return launcher;
+    }
+
+    /** 写入一条执行历史（新的在前，超出上限截断） */
+    private pushRun(record: DevAgentRunRecord) {
+        this.runs.unshift(record);
+        if (this.runs.length > MAX_RUN_HISTORY) this.runs.length = MAX_RUN_HISTORY;
+        return record;
+    }
+
+    /**
      * 以「Electron 可执行文件 + cli.js + 参数数组」的方式启动，不经过 shell
      */
-    private spawnAgent(launcher: DshLauncher, cwd: string, prompt: string) {
+    private spawnAgent(launcher: DshLauncher, cwd: string, prompt: string, timeout: number) {
         return new Promise<{ exitCode: number | null; stdout: string; stderr: string; timedOut: boolean }>(
             (resolve, reject) => {
                 const args = ['--expose-internals', launcher.cli, '--profile', 'headless', prompt];
@@ -195,7 +313,7 @@ export class DevAgentService {
                 let stderr = '';
                 let timedOut = false;
 
-                const timeout = this.resolveTimeout();
+                // 超时由调用方决定：简短回复通道短，改代码通道长
                 const timer = setTimeout(() => {
                     timedOut = true;
                     this.logger.warn(`开发模式任务超时（${timeout}ms），强制结束进程树`);
@@ -345,6 +463,13 @@ export class DevAgentService {
         const value = Number(process.env.DSH_AGENT_TIMEOUT);
         if (!Number.isFinite(value) || value <= 0) return DEFAULT_TIMEOUT;
         return Math.min(Math.floor(value), 30 * 60 * 1000);
+    }
+
+    /** 简短回复通道的超时（可用 DSH_REPLY_TIMEOUT 覆盖） */
+    private resolveReplyTimeout(): number {
+        const value = Number(process.env.DSH_REPLY_TIMEOUT);
+        if (!Number.isFinite(value) || value <= 0) return REPLY_TIMEOUT;
+        return Math.min(Math.floor(value), 10 * 60 * 1000);
     }
 
     /** 只保留末尾若干字符，避免长文本塞满页面 */
