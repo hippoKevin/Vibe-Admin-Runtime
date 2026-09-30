@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, Query, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { AssetKindDto, AssetNameDto, CreateAssetDto, SaveAssetDto } from 'src/dto/system/agent-admin/agent-admin.dto';
+import { AssetDetailDto, AssetKindDto, AssetNameDto, CreateAssetDto, SaveAssetDto } from 'src/dto/system/agent-admin/agent-admin.dto';
 import { AgentAdminService } from 'src/services/system/agent-admin.service';
 
 /**
@@ -35,14 +35,14 @@ export class AgentAdminController {
     }
 
     /**
-     * 详情：主文档内容 + 文件清单
-     * @param query kind + name
+     * 详情：指定文件（默认主文档）的内容 + 文件清单
+     * @param query kind + name + 可选 file
      */
     @Get('/detail')
     @UseGuards(AuthGuard('jwt'))
     @UsePipes(new ValidationPipe({ transform: true }))
-    getDetail(@Query() query: AssetNameDto) {
-        return this.agentAdminService.getDetail(query.kind, query.name);
+    getDetail(@Query() query: AssetDetailDto) {
+        return this.agentAdminService.getDetail(query.kind, query.name, query.file);
     }
 
     /**

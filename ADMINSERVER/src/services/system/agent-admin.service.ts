@@ -121,20 +121,24 @@ export class AgentAdminService {
     }
 
     /**
-     * 详情：主文档内容 + 目录内文件清单
+     * 详情：指定文件（默认主文档）的内容 + 目录内文件清单
+     * @param kindRaw skill / agent / tool
+     * @param nameRaw 条目名
+     * @param fileRaw 条目内相对路径，缺省看主文档
      */
-    getDetail(kindRaw: string, nameRaw: string) {
+    getDetail(kindRaw: string, nameRaw: string, fileRaw?: string) {
         const { kind, docName, dir, name } = this.resolveItem(kindRaw, nameRaw);
-        const docFile = path.join(dir, docName);
-        const hasDoc = fs.existsSync(docFile);
-
-        const content = hasDoc ? this.readText(docFile) : '';
+        const relative = String(fileRaw || '').trim() || docName;
+        // 查看允许任意后缀（只读），保存才限制可编辑后缀
+        const target = this.resolveFile(dir, relative, true);
+        const content = fs.existsSync(target) ? this.readText(target) : '';
 
         return {
             kind,
             name,
             docName,
-            hasDoc,
+            file: relative,
+            hasDoc: fs.existsSync(path.join(dir, docName)),
             path: dir,
             content,
             files: this.listFiles(dir),
@@ -251,7 +255,7 @@ export class AgentAdminService {
     }
 
     /** 解析条目内的相对文件路径，并做穿越与类型校验 */
-    private resolveFile(dir: string, fileRaw: string): string {
+    private resolveFile(dir: string, fileRaw: string, allowAnyExtension = false): string {
         const value = String(fileRaw || '').trim().replace(/\\/g, '/');
         if (!value || path.isAbsolute(value)) {
             throw new BusinessException('文件路径不合法');
@@ -265,9 +269,11 @@ export class AgentAdminService {
         const target = path.resolve(dir, ...segments);
         this.assertInside(dir, target);
 
-        const extension = path.extname(target).toLowerCase();
-        if (!EDITABLE_EXTENSIONS.includes(extension)) {
-            throw new BusinessException(`不支持在线编辑 ${extension || '该类型'} 文件`);
+        if (!allowAnyExtension) {
+            const extension = path.extname(target).toLowerCase();
+            if (!EDITABLE_EXTENSIONS.includes(extension)) {
+                throw new BusinessException(`不支持在线编辑 ${extension || '该类型'} 文件`);
+            }
         }
 
         return target;

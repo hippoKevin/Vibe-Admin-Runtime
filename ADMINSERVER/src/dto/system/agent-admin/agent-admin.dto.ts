@@ -17,6 +17,14 @@ export class AssetNameDto extends AssetKindDto {
     name: string;
 }
 
+/** 详情入参：可指定查看目录内哪个文件，默认主文档 */
+export class AssetDetailDto extends AssetNameDto {
+    @IsOptional()
+    @IsString()
+    @MaxLength(200)
+    file?: string;
+}
+
 /** 保存文件入参 */
 export class SaveAssetDto extends AssetNameDto {
     @IsString()
