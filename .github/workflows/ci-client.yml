@@ -37,6 +37,11 @@ jobs:
           cache: npm
           cache-dependency-path: ADMINCLIENT/package-lock.json
 
+      - name: 打印环境信息
+        run: |
+          node -v
+          npm -v
+
       - name: 安装依赖
         run: npm ci
 

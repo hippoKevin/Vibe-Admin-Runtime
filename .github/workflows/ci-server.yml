@@ -34,7 +34,9 @@ jobs:
       - name: 安装 pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          # 与 ADMINSERVER/pnpm-lock.yaml 的生成版本保持一致
+          # （锁文件由 pnpm 10 生成，用 pnpm 9 装会因解析差异失败）
+          version: 10.30.1
 
       - name: 配置 Node
         uses: actions/setup-node@v4
@@ -42,6 +44,12 @@ jobs:
           node-version: '20'
           cache: pnpm
           cache-dependency-path: ADMINSERVER/pnpm-lock.yaml
+
+      - name: 打印环境信息
+        run: |
+          node -v
+          pnpm -v
+          bash --version | head -n 1
 
       # 具体步骤都在后端 CI/CD 目录里，本地与 CI 行为一致
       - name: 安装依赖 · 构建 · 单元测试
