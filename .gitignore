@@ -14,6 +14,17 @@ logs/
 # 系统运维保存 .env 前自动生成的备份
 backup/
 
+# 构建/校验用的临时目录
+.build-tmp/
+.diag-*/
+.verify-*/
+
+# ==================== Agent 能力区 ====================
+# harness 只提交代码：文档、测试快照、Agent Notes 体积大（约 46MB）且不是运行必需
+ADMINAGENT/harness/docs/
+ADMINAGENT/harness/.agents/
+ADMINAGENT/harness/snapshots/
+
 # ==================== 环境变量本地覆盖文件 ====================
 # 注意：.env.development / .env.production 是仓库里已有并被跟踪的文件，
 # 如需转为本地配置，请先 git rm --cached 再按需调整这里
