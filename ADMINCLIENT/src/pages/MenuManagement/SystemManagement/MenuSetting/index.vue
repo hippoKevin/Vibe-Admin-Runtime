@@ -105,7 +105,7 @@
 
     <template #drag="{ row }">
       <span
-        style="cursor: grab; color: var(--td-text-color-placeholder); font-size: 16px;"
+        style="cursor: grab; color: var(--td-text-color-placeholder); font-size: calc(16px * var(--app-font-scale, 1));"
         :style="{ cursor: row.colKey === 'index' || row.colKey === 'actions' || row.fixed ? 'not-allowed' : 'grab' }"
       >
         ☰

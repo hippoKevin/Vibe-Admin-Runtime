@@ -24,6 +24,20 @@ export const PRESET_THEME_COLORS: ThemeColorOption[] = [
 /** 明暗模式（与 localStorage 双向同步） */
 export const themeMode = useStorage<'light' | 'dark'>('theme-mode', 'light')
 
+/** 页面亮度存储 key */
+export const BRIGHTNESS_STORAGE_KEY = 'theme-brightness'
+
+/** 亮度可调范围（百分比），100 表示原始亮度 */
+export const BRIGHTNESS_MIN = 50
+export const BRIGHTNESS_MAX = 150
+export const BRIGHTNESS_DEFAULT = 100
+
+/** 页面亮度（与 localStorage 双向同步，单位 %） */
+export const themeBrightness = useStorage<number>(
+  BRIGHTNESS_STORAGE_KEY,
+  BRIGHTNESS_DEFAULT
+)
+
 type RGB = [number, number, number]
 
 const WHITE: RGB = [255, 255, 255]
@@ -108,9 +122,51 @@ export function setThemeColor(hex: string) {
   applyThemeColor(hex)
 }
 
+/** 把亮度值收敛到合法范围，非法值回落到默认亮度 */
+export function clampBrightness(value: unknown): number {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return BRIGHTNESS_DEFAULT
+  return Math.min(BRIGHTNESS_MAX, Math.max(BRIGHTNESS_MIN, Math.round(num)))
+}
+
+/** 读取当前页面亮度 */
+export function getBrightness(): number {
+  return clampBrightness(themeBrightness.value)
+}
+
+/**
+ * 应用页面亮度：通过 html 上的 CSS 变量驱动 body 的 filter: brightness()
+ * （变量定义在 assets/styles/main.css 中）。
+ *
+ * 亮度为 100% 时会移除变量，使 body 完全不设置 filter：
+ * 因为 filter 会为 position: fixed 的后代生成包含块，
+ * 弹窗遮罩、popup 等固定定位元素在 100% 时保持原生定位行为。
+ */
+export function applyBrightness(value: unknown = getBrightness()) {
+  const brightness = clampBrightness(value)
+  const style = document.documentElement.style
+
+  if (brightness === BRIGHTNESS_DEFAULT) {
+    style.removeProperty('--app-brightness-filter')
+    return
+  }
+
+  style.setProperty('--app-brightness-filter', `brightness(${brightness / 100})`)
+}
+
+/** 设置并持久化页面亮度 */
+export function setBrightness(value: unknown) {
+  themeBrightness.value = clampBrightness(value)
+}
+
+/** 恢复默认页面亮度 */
+export function resetBrightness() {
+  setBrightness(BRIGHTNESS_DEFAULT)
+}
+
 let themeObserverStarted = false
 
-/** 初始化主题：应用已保存的主题色，并监听明暗模式变化时重刷色板 */
+/** 初始化主题：应用已保存的主题色与亮度，并监听明暗模式变化时重刷色板 */
 export function initTheme() {
   // 用存储的明暗模式同步 html 属性（登录页强制亮色后，进入首页需要恢复暗黑）
   document.documentElement.setAttribute(
@@ -118,6 +174,7 @@ export function initTheme() {
     themeMode.value === 'dark' ? 'dark' : 'light'
   )
   applyThemeColor(getThemeColor())
+  applyBrightness()
   if (!themeObserverStarted) {
     themeObserverStarted = true
     const observer = new MutationObserver(() => {
@@ -140,3 +197,6 @@ watch(
   },
   { immediate: true }
 )
+
+// 亮度变化时应用到页面（含跨标签页同步）
+watch(themeBrightness, () => applyBrightness(), { immediate: true })

@@ -38,7 +38,7 @@
   
       .col-title {
         flex: 1;
-        font-size: 14px;
+        font-size: calc(14px * var(--app-font-scale, 1));
         color: var(--td-text-color-primary);
       }
     }

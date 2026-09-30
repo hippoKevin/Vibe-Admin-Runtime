@@ -12,6 +12,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    FontScaleTool: typeof import('./src/components/FontScaleTool/index.vue')['default']
     ImageReview: typeof import('./src/components/ImageReview/imageReview.vue')['default']
     ImageReviewPopup: typeof import('./src/components/ImageReview/ImageReviewPopup/imageReviewPopup.vue')['default']
     LanguageSwitcher: typeof import('./src/components/LanguageSwitcher/index.vue')['default']
@@ -57,9 +58,11 @@ declare module 'vue' {
     TPagination: typeof import('tdesign-vue-next')['Pagination']
     TPopup: typeof import('tdesign-vue-next')['Popup']
     TRadio: typeof import('tdesign-vue-next')['Radio']
+    TRadioButton: typeof import('tdesign-vue-next')['RadioButton']
     TRadioGroup: typeof import('tdesign-vue-next')['RadioGroup']
     TSelect: typeof import('tdesign-vue-next')['Select']
     TSelectInput: typeof import('tdesign-vue-next')['SelectInput']
+    TSlider: typeof import('tdesign-vue-next')['Slider']
     TSpace: typeof import('tdesign-vue-next')['Space']
     TSubmenu: typeof import('tdesign-vue-next')['Submenu']
     TSwitch: typeof import('tdesign-vue-next')['Switch']
@@ -77,6 +80,7 @@ declare module 'vue' {
 
 // For TSX support
 declare global {
+  const FontScaleTool: typeof import('./src/components/FontScaleTool/index.vue')['default']
   const ImageReview: typeof import('./src/components/ImageReview/imageReview.vue')['default']
   const ImageReviewPopup: typeof import('./src/components/ImageReview/ImageReviewPopup/imageReviewPopup.vue')['default']
   const LanguageSwitcher: typeof import('./src/components/LanguageSwitcher/index.vue')['default']
@@ -122,9 +126,11 @@ declare global {
   const TPagination: typeof import('tdesign-vue-next')['Pagination']
   const TPopup: typeof import('tdesign-vue-next')['Popup']
   const TRadio: typeof import('tdesign-vue-next')['Radio']
+  const TRadioButton: typeof import('tdesign-vue-next')['RadioButton']
   const TRadioGroup: typeof import('tdesign-vue-next')['RadioGroup']
   const TSelect: typeof import('tdesign-vue-next')['Select']
   const TSelectInput: typeof import('tdesign-vue-next')['SelectInput']
+  const TSlider: typeof import('tdesign-vue-next')['Slider']
   const TSpace: typeof import('tdesign-vue-next')['Space']
   const TSubmenu: typeof import('tdesign-vue-next')['Submenu']
   const TSwitch: typeof import('tdesign-vue-next')['Switch']

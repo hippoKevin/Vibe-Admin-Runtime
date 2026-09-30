@@ -136,12 +136,12 @@ const handleReset = async () => {
 }
 
 .dialog-header {
-    font-size: 18px;
+    font-size: calc(18px * var(--app-font-scale, 1));
     font-weight: 600;
 }
 
 .card-title {
-    font-size: 15px;
+    font-size: calc(15px * var(--app-font-scale, 1));
     font-weight: 600;
 }
 
@@ -153,7 +153,7 @@ const handleReset = async () => {
 }
 
 .sys-name {
-    font-size: 20px;
+    font-size: calc(20px * var(--app-font-scale, 1));
     font-weight: 600;
     color: var(--td-text-color-primary);
     display: flex;
@@ -162,7 +162,7 @@ const handleReset = async () => {
 }
 
 .sys-desc {
-    font-size: 13px;
+    font-size: calc(13px * var(--app-font-scale, 1));
     color: var(--td-text-color-secondary);
     line-height: 1.6;
 }
@@ -184,7 +184,7 @@ const handleReset = async () => {
     display: flex;
     align-items: center;
     gap: 12px;
-    font-size: 14px;
+    font-size: calc(14px * var(--app-font-scale, 1));
     line-height: 30px;
 }
 
@@ -200,7 +200,7 @@ const handleReset = async () => {
 
 .about-desc {
     margin: 10px 0 14px;
-    font-size: 13px;
+    font-size: calc(13px * var(--app-font-scale, 1));
     line-height: 1.8;
     color: var(--td-text-color-secondary);
 }
@@ -218,7 +218,7 @@ const handleReset = async () => {
     border-radius: var(--td-radius-default);
     background: var(--td-brand-color-1);
     color: var(--td-brand-color);
-    font-size: 13px;
+    font-size: calc(13px * var(--app-font-scale, 1));
     text-decoration: none;
     transition: opacity 0.2s;
 
@@ -243,7 +243,7 @@ const handleReset = async () => {
 
 .qr-tip {
     margin-top: 8px;
-    font-size: 12px;
+    font-size: calc(12px * var(--app-font-scale, 1));
     color: var(--td-text-color-secondary);
 }
 </style>

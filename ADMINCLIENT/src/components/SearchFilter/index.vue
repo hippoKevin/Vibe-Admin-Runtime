@@ -18,7 +18,7 @@
     </template>
     <template #content>
       <div style="padding: 10px;">
-        <span style="font-size: 20px;">{{ $t('searchFilter.filter') }}</span>
+        <span style="font-size: calc(20px * var(--app-font-scale, 1));">{{ $t('searchFilter.filter') }}</span>
         <t-table
           id="filterTable"
           :maxHeight="600"

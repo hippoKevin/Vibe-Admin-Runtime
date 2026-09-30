@@ -3,7 +3,7 @@
         <template #logo>
             <div style="display: flex;align-items: center;margin:0px 14px;">
                 <img width="36" class="logo" :src="isThemeModeDark === 'dark' ? LogoWhite : Logo" />
-                <span style="font-size: 22px;font-weight: bold;margin-left: 10px;">汇创 ADMIN</span>
+                <span style="font-size: calc(22px * var(--app-font-scale, 1));font-weight: bold;margin-left: 10px;">汇创 ADMIN</span>
             </div>
         </template>
         <t-space size="small" align="center">
@@ -61,8 +61,11 @@
         </t-space>
         <template #operations>
             <t-space align="center" size="small">
-                <!-- 主题配置（主题色 + 暗黑模式） -->
+                <!-- 主题配置（主题色 + 暗黑模式 + 亮度） -->
                 <theme-switcher />
+
+                <!-- 字号修改器（调整网页字体大小） -->
+                <font-scale-tool />
 
                 <!-- 多国语言 -->
                 <language-switcher />
@@ -341,7 +344,7 @@ function handleMenuResultClick(item: any) {
         margin-bottom: 12px;
 
         .notice-count {
-            font-size: 13px;
+            font-size: calc(13px * var(--app-font-scale, 1));
             color: var(--td-text-color-secondary);
         }
     }
@@ -385,7 +388,7 @@ function handleMenuResultClick(item: any) {
             min-width: 0;
 
             .notice-item-title {
-                font-size: 13px;
+                font-size: calc(13px * var(--app-font-scale, 1));
                 font-weight: 500;
                 color: var(--td-text-color-primary);
                 white-space: nowrap;
@@ -395,7 +398,7 @@ function handleMenuResultClick(item: any) {
             }
 
             .notice-item-time {
-                font-size: 11px;
+                font-size: calc(11px * var(--app-font-scale, 1));
                 color: var(--td-text-color-placeholder);
             }
         }
@@ -409,7 +412,7 @@ function handleMenuResultClick(item: any) {
         justify-content: center;
         gap: 12px;
         color: var(--td-text-color-placeholder);
-        font-size: 13px;
+        font-size: calc(13px * var(--app-font-scale, 1));
     }
 }
 
@@ -448,7 +451,7 @@ function handleMenuResultClick(item: any) {
         align-items: center;
         justify-content: space-between;
         padding: 8px 12px;
-        font-size: 13px;
+        font-size: calc(13px * var(--app-font-scale, 1));
         color: var(--td-text-color-secondary);
         cursor: pointer;
 
@@ -459,7 +462,7 @@ function handleMenuResultClick(item: any) {
         }
 
         .menu-search-category-count {
-            font-size: 12px;
+            font-size: calc(12px * var(--app-font-scale, 1));
             color: var(--td-text-color-placeholder);
         }
     }
@@ -482,13 +485,13 @@ function handleMenuResultClick(item: any) {
 }
 
 .menu-search-item-name {
-    font-size: 14px;
+    font-size: calc(14px * var(--app-font-scale, 1));
     font-weight: 600;
     color: var(--td-text-color-primary);
 }
 
 .menu-search-item-catalog {
-    font-size: 12px;
+    font-size: calc(12px * var(--app-font-scale, 1));
     color: var(--td-text-color-placeholder);
     margin-top: 2px;
 }
@@ -501,7 +504,7 @@ function handleMenuResultClick(item: any) {
 .menu-search-empty {
     padding: 16px;
     text-align: center;
-    font-size: 13px;
+    font-size: calc(13px * var(--app-font-scale, 1));
     color: var(--td-text-color-placeholder);
 }
 
@@ -511,7 +514,7 @@ function handleMenuResultClick(item: any) {
     overflow-y: auto;
 
     .menu-search-recent-title {
-        font-size: 12px;
+        font-size: calc(12px * var(--app-font-scale, 1));
         color: var(--td-text-color-placeholder);
         padding: 4px 8px 8px;
     }

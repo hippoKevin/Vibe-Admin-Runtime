@@ -38,7 +38,7 @@ function toggleLocale() {
 
 <style scoped>
 .lang-label {
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale, 1));
   font-weight: 600;
   margin-left: 2px;
 }

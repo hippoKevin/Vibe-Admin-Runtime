@@ -30,7 +30,7 @@
 
   <!-- 文件匹配预览 -->
   <div v-if="filePreview.length > 0">
-    <div style="font-size: 14px; margin-bottom: 8px; font-weight: 500;">
+    <div style="font-size: calc(14px * var(--app-font-scale, 1)); margin-bottom: 8px; font-weight: 500;">
       {{ $t('batchImport.filePreviewTitle') }}
     </div>
     <t-table
@@ -60,7 +60,7 @@
       </template>
     </t-table>
 
-    <div style="margin-top: 8px; font-size: 12px; color: var(--td-text-color-secondary);">
+    <div style="margin-top: 8px; font-size: calc(12px * var(--app-font-scale, 1)); color: var(--td-text-color-secondary);">
       {{ $t('batchImport.countSummary', {
         total: filePreview.length,
         matched: filePreview.filter(f => f.matched).length,
@@ -71,7 +71,7 @@
 
   <!-- 导入结果 -->
   <div v-if="importResults?.length > 0">
-    <div style="font-size: 14px; margin-bottom: 8px; font-weight: 500;">
+    <div style="font-size: calc(14px * var(--app-font-scale, 1)); margin-bottom: 8px; font-weight: 500;">
       {{ $t('batchImport.resultTitle') }}
     </div>
     <t-table
@@ -101,14 +101,14 @@
               <div
                 v-for="(err, i) in row.errors"
                 :key="i"
-                style="font-size: 12px; margin-bottom: 4px; color: var(--td-error-color);"
+                style="font-size: calc(12px * var(--app-font-scale, 1)); margin-bottom: 4px; color: var(--td-error-color);"
               >
                 {{ err }}
               </div>
             </div>
           </template>
         </t-popup>
-        <span v-else style="color: var(--td-success-color); font-size: 12px;">{{ $t('batchImport.noError') }}</span>
+        <span v-else style="color: var(--td-success-color); font-size: calc(12px * var(--app-font-scale, 1));">{{ $t('batchImport.noError') }}</span>
       </template>
     </t-table>
   </div>

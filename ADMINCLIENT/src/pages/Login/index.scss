@@ -97,7 +97,7 @@
             }
 
             span {
-                font-size: 36px;
+                font-size: calc(36px * var(--app-font-scale, 1));
                 font-weight: bold;
             }
         }

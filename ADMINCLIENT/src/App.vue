@@ -5,12 +5,16 @@
   import enConfig from 'tdesign-vue-next/es/locale/en_US'
   import { useI18n } from 'vue-i18n'
   import { initTheme } from '@/utils/theme'
+  import { initFontScale } from '@/utils/fontScale'
 
   const { locale } = useI18n()
   const route = useRoute()
 
   // 应用已保存的主题色（明暗模式色板）
   initTheme()
+
+  // 应用已保存的字号缩放
+  initFontScale()
 
   // 登录页会强制亮色主题，离开登录页时用存储的明暗模式/主题色重新初始化
   watch(

@@ -7,6 +7,45 @@ html,body {
     color: #333;
 }
 
+/* ==================== 页面亮度 ==================== */
+/* 亮度由 src/utils/theme.ts 写入 html 的 --app-brightness-filter 变量来控制。
+   默认值为 none：此时 body 不生成 filter 包含块，position: fixed 弹层定位不受影响。 */
+body {
+    filter: var(--app-brightness-filter, none);
+    transition: filter 0.2s ease;
+}
+
+/* ==================== 页面字号缩放 ==================== */
+/* 系数由 src/utils/fontScale.ts 写到 html 上的 --app-font-scale（默认 1）。
+   这里把 TDesign 的字号 token 按系数换算；自定义样式里写死的 px 字号也乘以同一系数。
+   只改字号、不改高度与间距，所以不会影响 100vh 布局。 */
+html:root {
+    --app-font-scale: 1;
+
+    --td-font-size-link-small: calc(12px * var(--app-font-scale));
+    --td-font-size-link-medium: calc(14px * var(--app-font-scale));
+    --td-font-size-link-large: calc(16px * var(--app-font-scale));
+    --td-font-size-mark-small: calc(12px * var(--app-font-scale));
+    --td-font-size-mark-medium: calc(14px * var(--app-font-scale));
+    --td-font-size-body-small: calc(12px * var(--app-font-scale));
+    --td-font-size-body-medium: calc(14px * var(--app-font-scale));
+    --td-font-size-body-large: calc(16px * var(--app-font-scale));
+    --td-font-size-title-small: calc(14px * var(--app-font-scale));
+    --td-font-size-title-medium: calc(16px * var(--app-font-scale));
+    --td-font-size-title-large: calc(18px * var(--app-font-scale));
+    --td-font-size-title-extraLarge: calc(20px * var(--app-font-scale));
+    --td-font-size-headline-small: calc(24px * var(--app-font-scale));
+    --td-font-size-headline-medium: calc(28px * var(--app-font-scale));
+    --td-font-size-headline-large: calc(36px * var(--app-font-scale));
+    --td-font-size-display-medium: calc(48px * var(--app-font-scale));
+    --td-font-size-display-large: calc(64px * var(--app-font-scale));
+}
+
+/* 没有显式设置字号的文本跟随基础字号（浏览器默认 16px） */
+body {
+    font-size: calc(16px * var(--app-font-scale));
+}
+
 /* ==================== 明暗模式切换转场（View Transitions） ==================== */
 ::view-transition-old(root),
 ::view-transition-new(root) {

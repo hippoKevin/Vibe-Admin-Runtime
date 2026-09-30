@@ -43,6 +43,31 @@
             @change="handleModeChange"
           />
         </div>
+
+        <div class="theme-config__divider"></div>
+
+        <div class="theme-config__brightness">
+          <div class="theme-config__row">
+            <span class="theme-config__row-label">{{ $t('themeColors.brightness') }}</span>
+            <t-tooltip :content="$t('themeColors.brightnessReset')" placement="top">
+              <span
+                class="theme-config__brightness-value"
+                :class="{ 'theme-config__brightness-value--default': brightness === BRIGHTNESS_DEFAULT }"
+                @click="handleBrightnessReset"
+              >
+                {{ brightness }}%
+              </span>
+            </t-tooltip>
+          </div>
+
+          <t-slider
+            v-model="brightness"
+            :min="BRIGHTNESS_MIN"
+            :max="BRIGHTNESS_MAX"
+            :step="BRIGHTNESS_STEP"
+            :label="false"
+          />
+        </div>
       </div>
     </template>
   </t-popup>
@@ -55,12 +80,31 @@ export default {
 </script>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { PaletteIcon } from 'tdesign-icons-vue-next'
-import { PRESET_THEME_COLORS, getThemeColor, setThemeColor, themeMode } from '@/utils/theme'
+import {
+  BRIGHTNESS_DEFAULT,
+  BRIGHTNESS_MAX,
+  BRIGHTNESS_MIN,
+  PRESET_THEME_COLORS,
+  getBrightness,
+  getThemeColor,
+  setBrightness,
+  setThemeColor,
+  themeMode,
+} from '@/utils/theme'
 import { switchThemeWithCurtain } from '@/utils/themeTransition'
 
+/** 亮度滑杆步长（%） */
+const BRIGHTNESS_STEP = 5
+
 const currentColor = ref(getThemeColor())
+
+/** 亮度：读取时收敛到合法范围，写入时持久化并即时生效 */
+const brightness = computed({
+  get: () => getBrightness(),
+  set: (value: number) => setBrightness(value),
+})
 
 function handleSelect(value: string) {
   currentColor.value = value
@@ -70,6 +114,10 @@ function handleSelect(value: string) {
 function handleModeChange(value: any) {
   switchThemeWithCurtain(value === 'dark' ? 'dark' : 'light')
 }
+
+function handleBrightnessReset() {
+  brightness.value = BRIGHTNESS_DEFAULT
+}
 </script>
 
 <style scoped>
@@ -78,7 +126,7 @@ function handleModeChange(value: any) {
 }
 
 .theme-config__label {
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale, 1));
   color: var(--td-text-color-primary);
   margin-bottom: 10px;
 }
@@ -122,7 +170,31 @@ function handleModeChange(value: any) {
 }
 
 .theme-config__row-label {
-  font-size: 13px;
+  font-size: calc(13px * var(--app-font-scale, 1));
   color: var(--td-text-color-primary);
+}
+
+.theme-config__brightness {
+  margin-top: 2px;
+}
+
+.theme-config__brightness :deep(.t-slider) {
+  margin-top: 6px;
+}
+
+.theme-config__brightness-value {
+  font-size: calc(12px * var(--app-font-scale, 1));
+  color: var(--td-text-color-secondary);
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.2s;
+}
+
+.theme-config__brightness-value:hover {
+  color: var(--td-brand-color);
+}
+
+.theme-config__brightness-value--default {
+  color: var(--td-text-color-placeholder);
 }
 </style>

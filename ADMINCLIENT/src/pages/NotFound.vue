@@ -55,7 +55,7 @@
   
   // 404 数字样式（带悬浮动画）
   .error-number {
-    font-size: 120px;
+    font-size: calc(120px * var(--app-font-scale, 1));
     font-weight: 700;
     margin-bottom: 20px;
     display: flex;
@@ -80,13 +80,13 @@
   
   // 标题和描述文本
   .error-title {
-    font-size: 24px;
+    font-size: calc(24px * var(--app-font-scale, 1));
     color: #333;
     margin-bottom: 10px;
   }
   
   .error-desc {
-    font-size: 16px;
+    font-size: calc(16px * var(--app-font-scale, 1));
     color: #666;
     margin-bottom: 30px;
     text-align: center;
@@ -100,7 +100,7 @@
     color: #fff;
     border: none;
     border-radius: 8px;
-    font-size: 16px;
+    font-size: calc(16px * var(--app-font-scale, 1));
     cursor: pointer;
     transition: all 0.3s ease;
   

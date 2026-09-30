@@ -1,5 +1,5 @@
 .overlay-options {
     display: inline-block;
-    font-size: 20px;
+    font-size: calc(20px * var(--app-font-scale, 1));
 }
 
