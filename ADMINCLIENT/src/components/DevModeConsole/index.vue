@@ -1,0 +1,1059 @@
+<template>
+  <!--
+    开发模式：应用内的原生组件 + 一层幕布（不是弹窗、不是 iframe、不是新窗口）
+    - 整屏浅色幕布 pointer-events: none，页面内容透过幕布可见、照常可点；
+    - 球体 / 输入区 / 面板这些「实体」各自接收鼠标事件；
+    - 挂载点固定在 App.vue，页面级热更新不会把它卸载，状态全部持久化在 localStorage。
+  -->
+  <div class="dev-mode" :class="{ 'dev-mode--busy': generating }" data-testid="dev-mode">
+    <div class="dev-mode__veil" data-testid="dev-mode-veil" />
+
+    <div class="dev-mode__rings" :class="{ 'dev-mode__rings--busy': generating }" aria-hidden="true">
+      <span class="dev-mode__ring dev-mode__ring--1" />
+      <span class="dev-mode__ring dev-mode__ring--2" />
+      <span class="dev-mode__ring dev-mode__ring--3" />
+      <span class="dev-mode__ring dev-mode__ring--4" />
+    </div>
+
+    <canvas ref="meshRef" class="dev-mode__mesh" data-testid="dev-console-mesh" />
+
+    <div class="dev-mode__layout">
+      <header class="dev-mode__topbar">
+        <span class="dev-mode__brand">vibe-admin-runtime</span>
+        <span
+          class="dev-mode__status"
+          :class="{ 'dev-mode__status--error': statusError }"
+          data-testid="dev-console-status"
+        >{{ statusText }}</span>
+        <button
+          type="button"
+          class="dev-mode__btn"
+          data-testid="dev-mode-close"
+          :title="$t('devMode.close')"
+          @click="handleClose"
+        >{{ $t('devMode.exit') }}</button>
+      </header>
+
+      <div ref="stageRef" class="dev-mode__stage">
+        <div v-show="generating" class="dev-mode__busy" data-testid="dev-console-busy">
+          <span class="dev-mode__busy-spin" />
+          <span class="dev-mode__busy-text">{{ $t('devMode.generating') }}</span>
+        </div>
+      </div>
+
+      <div
+        class="dev-mode__dock"
+        data-testid="dev-mode-dock"
+        :style="{ transform: dockTransform }"
+      >
+        <!-- 拖动把手：音轨位置可在舞台里上下移动，位置持久化 -->
+        <span
+          class="dev-mode__dock-grip"
+          data-testid="dev-mode-dock-grip"
+          :title="$t('devMode.micIdle')"
+          @pointerdown="handleDockDragStart"
+        />
+
+        <!-- 本次执行结果 -->
+        <section v-if="resultVisible" class="dev-mode__result" data-testid="dev-console-result">
+          <div class="dev-mode__result-head">
+            <span class="dev-mode__dot" :class="{ 'dev-mode__dot--error': resultIsError }" />
+            <span>{{ resultHeadline }}</span>
+          </div>
+          <ul v-if="resultFiles.length" class="dev-mode__files">
+            <li v-for="(file, index) in resultFiles" :key="`${file.path}-${index}`" class="dev-mode__file">
+              <span class="dev-mode__tag" :class="`dev-mode__tag--${statusInfo(file.status).key}`">
+                {{ statusInfo(file.status).label }}
+              </span>
+              <span class="dev-mode__path">{{ file.path }}</span>
+            </li>
+          </ul>
+          <p v-else-if="!resultIsError" class="dev-mode__muted">{{ $t('devMode.resultFilesEmpty') }}</p>
+        </section>
+
+        <!-- 输入框上方的「Agent 执行过程」开关 -->
+        <button
+          type="button"
+          class="dev-mode__toggle"
+          data-testid="dev-console-panel-toggle"
+          :aria-expanded="panelOpen ? 'true' : 'false'"
+          @click="togglePanel"
+        >
+          <span class="dev-mode__caret">{{ panelOpen ? '▾' : '▸' }}</span>
+          <span>{{ $t('devMode.panelTitle') }}</span>
+        </button>
+
+        <!-- 输入区 / 音轨：默认文字输入，同一位置可切语音 -->
+        <div class="dev-mode__row">
+          <textarea
+            v-if="mode === 'text'"
+            ref="inputRef"
+            v-model="draft"
+            class="dev-mode__field"
+            data-testid="dev-console-input"
+            :placeholder="$t('devMode.promptPlaceholder')"
+            @keydown="handleInputKeydown"
+          />
+
+          <div v-else class="dev-mode__track" data-testid="dev-console-track">
+            <canvas ref="waveRef" class="dev-mode__wave" data-testid="dev-console-wave" />
+            <span class="dev-mode__track-live" data-testid="dev-console-live">{{ liveText }}</span>
+          </div>
+
+          <button
+            type="button"
+            class="dev-mode__btn dev-mode__btn--icon"
+            :class="{ 'dev-mode__btn--on': mode === 'voice' }"
+            data-testid="dev-console-mode-toggle"
+            :title="mode === 'voice' ? $t('devMode.modeToText') : $t('devMode.modeToVoice')"
+            @click="handleToggleMode"
+          >{{ mode === 'voice' ? '⌨' : '🎙' }}</button>
+
+          <button
+            type="button"
+            class="dev-mode__btn dev-mode__btn--primary"
+            data-testid="dev-console-send"
+            :disabled="!canSend"
+            @click="handleGenerate"
+          >{{ generating ? $t('devMode.generating') : $t('devMode.send') }}</button>
+        </div>
+
+        <div
+          class="dev-mode__hint"
+          :class="{ 'dev-mode__hint--error': hintIsError }"
+          data-testid="dev-console-hint"
+        >{{ hintText }}</div>
+      </div>
+    </div>
+
+    <!-- Agent 执行过程面板 -->
+    <section
+      v-show="panelOpen"
+      class="dev-mode__panel"
+      data-testid="dev-console-panel"
+      :style="{ '--panel-alpha': String(panelAlpha / 100) }"
+    >
+      <div class="dev-mode__panel-head">
+        <span class="dev-mode__panel-title">{{ $t('devMode.panelTitle') }}</span>
+        <label class="dev-mode__panel-alpha">
+          {{ $t('devMode.panelAlpha') }}
+          <input
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            :value="panelAlpha"
+            data-testid="dev-console-alpha"
+            @input="handleAlphaInput"
+          />
+        </label>
+        <button
+          type="button"
+          class="dev-mode__btn"
+          data-testid="dev-console-refresh"
+          @click="refreshRuns"
+        >{{ $t('devMode.panelRefresh') }}</button>
+        <button type="button" class="dev-mode__btn" @click="closePanel">{{ $t('devMode.panelCollapse') }}</button>
+      </div>
+
+      <div class="dev-mode__panel-body" data-testid="dev-console-panel-body">
+        <div class="dev-mode__section">
+          <div class="dev-mode__section-title">{{ $t('devMode.panelLatest') }}</div>
+          <template v-if="detailRecord">
+            <div class="dev-mode__kv">
+              <span class="dev-mode__kv-key">{{ $t('devMode.panelPrompt') }}</span>
+              <span class="dev-mode__kv-val">{{ detailRecord.prompt || $t('devMode.panelPromptEmpty') }}</span>
+            </div>
+            <div class="dev-mode__kv">
+              <span class="dev-mode__kv-key">{{ $t('devMode.panelDuration') }}</span>
+              <span class="dev-mode__kv-val">{{ formatDuration(detailRecord.duration) }}</span>
+            </div>
+            <div class="dev-mode__kv">
+              <span class="dev-mode__kv-key">{{ $t('devMode.panelExitCode') }}</span>
+              <span class="dev-mode__kv-val">{{ detailRecord.exitCode == null ? '—' : detailRecord.exitCode }}</span>
+            </div>
+            <div class="dev-mode__kv">
+              <span class="dev-mode__kv-key">{{ $t('devMode.panelFinishedAt') }}</span>
+              <span class="dev-mode__kv-val">{{ formatClock(detailRecord.finishedAt) }}</span>
+            </div>
+            <div v-if="detailRecord.error" class="dev-mode__kv">
+              <span class="dev-mode__kv-key">{{ $t('devMode.panelError') }}</span>
+              <span class="dev-mode__kv-val">{{ detailRecord.error }}</span>
+            </div>
+          </template>
+          <div v-else class="dev-mode__muted">{{ $t('devMode.panelEmpty') }}</div>
+        </div>
+
+        <div v-if="detailRecord" class="dev-mode__section">
+          <div class="dev-mode__section-title">
+            {{ $t('devMode.panelFiles', { count: (detailRecord.files || []).length }) }}
+          </div>
+          <ul v-if="(detailRecord.files || []).length" class="dev-mode__files">
+            <li v-for="(file, index) in detailRecord.files" :key="`${file.path}-${index}`" class="dev-mode__file">
+              <span class="dev-mode__tag" :class="`dev-mode__tag--${statusInfo(file.status).key}`">
+                {{ statusInfo(file.status).label }}
+              </span>
+              <span class="dev-mode__path">{{ file.path }}</span>
+            </li>
+          </ul>
+          <div v-else class="dev-mode__muted">{{ $t('devMode.panelNoFiles') }}</div>
+        </div>
+
+        <div v-if="detailRecord" class="dev-mode__section">
+          <div class="dev-mode__section-title">{{ $t('devMode.panelOutput') }}</div>
+          <pre class="dev-mode__pre">{{ detailRecord.output || $t('devMode.panelNoContent') }}</pre>
+        </div>
+
+        <div v-if="detailRecord" class="dev-mode__section">
+          <div class="dev-mode__section-title">{{ $t('devMode.panelReasoning') }}</div>
+          <pre class="dev-mode__pre">{{ detailRecord.reasoningTail || $t('devMode.panelNoContent') }}</pre>
+        </div>
+
+        <div v-if="runs.length" class="dev-mode__section">
+          <div class="dev-mode__section-title">{{ $t('devMode.panelHistory', { count: runs.length }) }}</div>
+          <ul class="dev-mode__history">
+            <li
+              v-for="run in runs"
+              :key="run.id"
+              class="dev-mode__history-item"
+              :class="{ 'dev-mode__history-item--active': String(run.id) === String(selectedRunId) }"
+              @click="selectRun(run)"
+            >
+              <span class="dev-mode__mono">{{ formatClock(run.finishedAt) }}</span>
+              <span class="dev-mode__history-prompt">{{ run.prompt || $t('devMode.noPrompt') }}</span>
+              <span class="dev-mode__mono">
+                {{ formatDuration(run.duration) }} · {{ $t('devMode.fileCount', { count: (run.files || []).length }) }}
+              </span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </div>
+</template>
+
+<script lang="ts">
+export default {
+  name: 'DevModeConsole',
+}
+</script>
+
+<script lang="ts" setup>
+// 1. 第三方依赖
+import { MessagePlugin } from 'tdesign-vue-next'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
+// 2. 工程内工具
+import { useI18n } from 'vue-i18n'
+import router from '@/router'
+import { useUserStore } from '@/stores/userStore'
+import {
+  type DevAgentChangedFile,
+  type DevAgentRunRecord,
+  type DevAgentRunResult,
+  getDevAgentRuns,
+  getDevAgentStatus,
+  generateByDevAgent,
+} from '@/api/devAgent'
+import {
+  closeDevMode,
+  devModeDockOffset,
+  devModeDraft,
+  devModePanelAlpha,
+  devModePanelOpen,
+  saveDevModeDockOffset,
+  saveDevModeDraft,
+  saveDevModePanelAlpha,
+  saveDevModePanelOpen,
+} from '@/utils/devMode'
+import { SphereMesh, drawWave, readLevel } from './controller/mesh'
+import { VoiceInput } from './controller/voice'
+
+/**
+ * 开发模式控制台（原生 Vue 组件）
+ *
+ * 界面本体从 ADMINSERVER/public/dev-agent-console.html 移植进来：
+ * 球体神经网络 canvas、白色音轨、文字/语音切换、语音结果追加、可折叠的
+ * 「Agent 执行过程」面板 + 透明度滑块、执行态球体消失只剩波纹、退出按钮。
+ *
+ * 与「独立页面」版本的区别：
+ *   1) 只做一层整屏浅色幕布来区分（幕布 pointer-events: none，页面照常可点）；
+ *   2) 不再用 postMessage / window.open —— 完成后直接按菜单归一比对并 router.push；
+ *   3) 状态全部持久化，刷新后自动恢复；挂载时请求 /status 与 /runs，
+ *      若后端还有任务在跑就直接进入执行态并轮询到结束（Agent 不会被打断）。
+ */
+
+/** 重连轮询间隔（毫秒） */
+const RECONNECT_POLL_INTERVAL = 2500
+/** 等待后端任务结束的上限（毫秒） */
+const RECONNECT_MAX_WAIT = 30 * 60 * 1000
+/** 草稿落盘的防抖时间（毫秒） */
+const DRAFT_SAVE_DELAY = 300
+/** Agent 自身目录下的改动不参与页面跳转（归一化后的小写前缀） */
+const AGENT_DIR_PREFIX = 'adminagent/'
+/** 音轨位置允许的偏移范围（px） */
+const DOCK_OFFSET_MIN = -180
+const DOCK_OFFSET_MAX = 240
+
+/** 菜单里的一个可跳转页面 */
+interface MenuPage {
+  /** 路由名（本项目路由就是 /组件名） */
+  name: string
+  /** 菜单配置的组件地址，形如 /src/pages/SystemOps/Log/index.vue */
+  address: string
+}
+
+const { t } = useI18n()
+const userStore = useUserStore()
+
+const meshRef = useTemplateRef<HTMLCanvasElement>('meshRef')
+const waveRef = useTemplateRef<HTMLCanvasElement>('waveRef')
+const stageRef = useTemplateRef<HTMLElement>('stageRef')
+const inputRef = useTemplateRef<HTMLTextAreaElement>('inputRef')
+
+/** 输入框内容（语音识别结果追加到这里，草稿持久化） */
+const draft = ref<string>(devModeDraft.value)
+/** 'text' | 'voice' */
+const mode = ref<'text' | 'voice'>('text')
+/** 临时识别结果（音轨上显示） */
+const interim = ref('')
+/** 识别服务的临时提示（空则回落成草稿预览） */
+const speechNote = ref('')
+/** dsh 是否就绪 */
+const ready = ref(false)
+/** 后端是否正在执行任务 */
+const generating = ref(false)
+/** 面板是否展开 */
+const panelOpen = ref<boolean>(devModePanelOpen.value)
+/** 面板背景透明度（0~100） */
+const panelAlpha = ref<number>(devModePanelAlpha.value)
+/** 音轨位置（相对舞台底部的偏移 px） */
+const dockOffset = ref<number>(devModeDockOffset.value)
+/** 顶部状态栏文字与是否为错误态 */
+const statusText = ref<string>(t('devMode.statusChecking'))
+const statusError = ref(false)
+/** 底部提示文字与是否为错误态 */
+const hintText = ref<string>('')
+const hintIsError = ref(false)
+/** 最近一次结果 */
+const lastResult = ref<DevAgentRunRecord | DevAgentRunResult | null>(null)
+/** 结果卡片的错误态（本地错误，不是后端那次执行失败） */
+const resultIsError = ref(false)
+/** /runs 返回的历史 */
+const runs = ref<DevAgentRunRecord[]>([])
+/** 面板里选中的历史记录 */
+const selectedRunId = ref<string | number | null>(null)
+/** 结果卡片是否展示 */
+const resultVisible = ref(false)
+
+/** 球体画布控制器 */
+let mesh: SphereMesh | null = null
+/** 麦克风/语音识别控制器 */
+let voice: VoiceInput | null = null
+/** 帧循环句柄 */
+let rafId = 0
+/** 重连轮询定时器 */
+let pollTimer = 0
+/** 轮询到任务结束后的回调 */
+let pollComplete: (() => void) | null = null
+/** 开始等待后端任务的时间 */
+let waitingSince = 0
+/** 草稿落盘定时器 */
+let draftTimer = 0
+/** 是否已经挂载（避免卸载后 rAF / 定时器又跑起来） */
+let mounted = false
+
+const canSend = computed(() => ready.value && !generating.value && !!draft.value.trim())
+
+/** 音轨/输入区的位置偏移（拖动把手调整，持久化） */
+const dockTransform = computed(() => `translateY(${dockOffset.value}px)`)
+
+/** 音轨上的文字：临时识别结果 > 识别服务提示 > 已识别草稿 */
+const liveText = computed(() => {
+  if (interim.value) return `${t('devMode.micResultPrefix')}${interim.value}`
+  if (speechNote.value) return t(speechNote.value)
+  const value = draft.value.trim()
+  if (!value) return t('devMode.micWaiting')
+  return t('devMode.micResultPrefix') + (value.length > 42 ? `${value.slice(0, 42)}…` : value)
+})
+
+/** 结果卡片标题 */
+const resultHeadline = computed(() => {
+  const record = lastResult.value
+  if (resultIsError.value) {
+    return t('devMode.resultError', { reason: (record as any)?.error || t('devMode.requestFailed') })
+  }
+  if (!record) return t('devMode.resultTitle')
+  const head = record.ok ? t('devMode.resultDone') : t('devMode.resultEnded')
+  return `${head} · ${t('devMode.resultMeta', {
+    duration: formatDuration(record.duration),
+    code: record.exitCode == null ? '—' : record.exitCode,
+    time: formatClock(record.finishedAt),
+  })}`
+})
+
+/** 结果卡片里的改动文件 */
+const resultFiles = computed<DevAgentChangedFile[]>(() => {
+  const record = lastResult.value
+  return record && Array.isArray(record.files) ? record.files : []
+})
+
+/** 面板顶部展示的记录：本地结果与选中的历史里取更新的那次 */
+const detailRecord = computed<DevAgentRunRecord | null>(() => {
+  const history = runs.value
+  let selected: DevAgentRunRecord | null = null
+  for (const item of history) {
+    if (String(item.id) === String(selectedRunId.value)) {
+      selected = item
+      break
+    }
+  }
+  if (!selected) selected = history[0] || null
+
+  const local = lastResult.value as DevAgentRunRecord | null
+  if (local && (!selected || new Date(local.finishedAt || 0) >= new Date(selected.finishedAt || 0))) {
+    return local
+  }
+  return selected
+})
+
+/**
+ * Method Setting
+ * 方法配置
+ */
+
+/** 毫秒 → 人类可读耗时 */
+function formatDuration(ms: number | null | undefined): string {
+  const value = Number(ms)
+  if (!Number.isFinite(value) || value < 0) return '—'
+  if (value < 1000) return `${value}ms`
+  if (value < 60000) return `${(value / 1000).toFixed(1)}s`
+  return `${Math.floor(value / 60000)}m${Math.round((value % 60000) / 1000)}s`
+}
+
+/** ISO 时间 → 本地时分秒 */
+function formatClock(iso: string | null | undefined): string {
+  const date = iso ? new Date(iso) : null
+  if (!date || Number.isNaN(date.getTime())) return '—'
+  const pad = (n: number) => (n < 10 ? '0' : '') + n
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
+/** git 状态码 → i18n 标签 + 样式后缀 */
+function statusInfo(code: string | null | undefined): { label: string; key: string } {
+  const value = String(code == null ? '' : code).trim().toUpperCase()
+  if (value === 'M') return { label: t('devMode.fileStatus.modified'), key: 'modified' }
+  if (value === 'A') return { label: t('devMode.fileStatus.added'), key: 'added' }
+  if (value === 'D') return { label: t('devMode.fileStatus.deleted'), key: 'deleted' }
+  if (value === 'R') return { label: t('devMode.fileStatus.renamed'), key: 'renamed' }
+  if (value === '??' || value === '?') return { label: t('devMode.fileStatus.untracked'), key: 'untracked' }
+  return { label: t('devMode.fileStatus.changed'), key: 'changed' }
+}
+
+function setHint(text: string, isError = false) {
+  hintText.value = text || ''
+  hintIsError.value = isError
+}
+
+function setStatus(text: string, isError = false) {
+  statusText.value = text || ''
+  statusError.value = isError
+}
+
+/** 渲染一次结果（isError 只用于本地请求失败，后端那次失败仍按它的 ok 展示） */
+function renderResult(record: DevAgentRunRecord | DevAgentRunResult | null, isError = false) {
+  lastResult.value = record
+  resultIsError.value = isError
+  resultVisible.value = !!record
+}
+
+/** 关闭开发模式（只改状态开关，App.vue 会卸载本组件） */
+function handleClose() {
+  closeDevMode()
+}
+
+/**
+ * Dock Setting
+ * 音轨位置（拖动把手上下移动，位置持久化）
+ */
+
+let dockDragging = false
+let dockStartY = 0
+let dockStartOffset = 0
+let dockMoved = false
+
+function handleDockDragStart(event: PointerEvent) {
+  if (event.button !== 0) return
+  dockDragging = true
+  dockMoved = false
+  dockStartY = event.clientY
+  dockStartOffset = dockOffset.value
+  window.addEventListener('pointermove', handleDockDragMove)
+  window.addEventListener('pointerup', handleDockDragEnd)
+  window.addEventListener('pointercancel', handleDockDragEnd)
+}
+
+function handleDockDragMove(event: PointerEvent) {
+  if (!dockDragging) return
+  const dy = event.clientY - dockStartY
+  if (!dockMoved && Math.abs(dy) < 3) return
+  dockMoved = true
+  event.preventDefault()
+  dockOffset.value = Math.min(DOCK_OFFSET_MAX, Math.max(DOCK_OFFSET_MIN, dockStartOffset + dy))
+}
+
+function handleDockDragEnd() {
+  if (!dockDragging) return
+  dockDragging = false
+  window.removeEventListener('pointermove', handleDockDragMove)
+  window.removeEventListener('pointerup', handleDockDragEnd)
+  window.removeEventListener('pointercancel', handleDockDragEnd)
+  if (dockMoved) saveDevModeDockOffset(dockOffset.value)
+}
+
+/**
+ * Panel Setting
+ * 执行过程面板
+ */
+
+function openPanel() {
+  panelOpen.value = true
+  saveDevModePanelOpen(true)
+  refreshRuns()
+}
+
+function closePanel() {
+  panelOpen.value = false
+  saveDevModePanelOpen(false)
+}
+
+function togglePanel() {
+  if (panelOpen.value) closePanel()
+  else openPanel()
+}
+
+function selectRun(run: DevAgentRunRecord) {
+  selectedRunId.value = run.id
+}
+
+/** 面板背景透明度：滑块输入即写 localStorage */
+function handleAlphaInput(event: Event) {
+  const value = Number((event.target as HTMLInputElement).value)
+  panelAlpha.value = value
+  saveDevModePanelAlpha(value)
+}
+
+/**
+ * Router Setting
+ * 改动文件 → 菜单路由（同进程，不再走 postMessage）
+ */
+
+/** 路径归一化：统一分隔符、去掉开头 './'、转小写 */
+function normalizePath(value: string): string {
+  return String(value || '')
+    .replace(/\\/g, '/')
+    .replace(/^\.\//, '')
+    .toLowerCase()
+}
+
+/** child 是否是 parent 的「整段路径后缀」 */
+function isPathSuffix(child: string, parent: string): boolean {
+  if (!parent || child.length <= parent.length || !child.endsWith(parent)) return false
+  if (parent.startsWith('/')) return true
+  return child.charAt(child.length - parent.length - 1) === '/'
+}
+
+/**
+ * 后缀归一化比对：
+ * 菜单 /src/pages/SystemOps/Log/index.vue ↔ 改动文件 ADMINCLIENT/src/pages/SystemOps/Log/index.vue
+ */
+function isSamePageFile(address: string, filePath: string): boolean {
+  const menuPath = normalizePath(address)
+  const changedPath = normalizePath(filePath)
+  if (!menuPath || !changedPath) return false
+  if (menuPath === changedPath) return true
+  return isPathSuffix(changedPath, menuPath) || isPathSuffix(menuPath, changedPath)
+}
+
+/** 递归收集菜单树里所有「带组件地址」的页面 */
+function collectMenuPages(): MenuPage[] {
+  const pages: MenuPage[] = []
+
+  const walk = (list: any[]) => {
+    for (const item of list || []) {
+      if (item?.component_address && item?.component_name) {
+        pages.push({
+          name: String(item.component_name),
+          address: String(item.component_address),
+        })
+      }
+      if (Array.isArray(item?.children) && item.children.length) walk(item.children)
+    }
+  }
+
+  const menus = (userStore.userInfo as any)?.data?.menu_list
+  walk(Array.isArray(menus) ? menus : [])
+  return pages
+}
+
+/** 从改动文件里挑出要跳转的页面：命中多个时取第一个非 ADMINAGENT/ 的前端页面 */
+function resolvePageRoute(files: DevAgentChangedFile[]): MenuPage | null {
+  const pages = collectMenuPages()
+  const hits: { page: MenuPage; path: string }[] = []
+
+  for (const file of files) {
+    const filePath = String(file?.path || '')
+    if (!filePath) continue
+
+    const hit = pages.find((page) => isSamePageFile(page.address, filePath))
+    if (hit) hits.push({ page: hit, path: filePath })
+  }
+
+  const frontend = hits.find((item) => !normalizePath(item.path).startsWith(AGENT_DIR_PREFIX))
+  return frontend ? frontend.page : null
+}
+
+/** 任务完成后：把被改动的文件映射成菜单路由并跳过去 */
+function jumpToChangedPage(files: DevAgentChangedFile[]) {
+  const list = Array.isArray(files) ? files : []
+  if (!list.length) return
+
+  const target = resolvePageRoute(list)
+  if (!target) {
+    // 改动不在任何菜单页面上（例如只改了后端），保持当前页面
+    MessagePlugin.info(t('devMode.appliedNoMatch'))
+    return
+  }
+
+  MessagePlugin.success(t('devMode.appliedJump', { name: target.name }))
+  router.push(`/${target.name}`)
+}
+
+/**
+ * Task Setting
+ * 任务执行 + 刷新后自动接回
+ */
+
+function stopPolling() {
+  if (pollTimer) {
+    window.clearTimeout(pollTimer)
+    pollTimer = 0
+  }
+  pollComplete = null
+}
+
+function enterBusy(hintKey: string) {
+  generating.value = true
+  resultVisible.value = false
+  setHint(t(hintKey))
+}
+
+function stopBusy() {
+  generating.value = false
+}
+
+function applyRunsData(data: { items?: DevAgentRunRecord[] } | null | undefined) {
+  runs.value = Array.isArray(data?.items) ? data.items : []
+}
+
+/** 拉一次执行历史（面板用；失败不打断主流程） */
+function refreshRuns(): Promise<void> {
+  return getDevAgentRuns()
+    .then((data) => {
+      applyRunsData(data)
+      if (data?.running && !generating.value) setHint(t('devMode.runningBackend'))
+    })
+    .catch(() => {
+      /* 忽略 */
+    })
+}
+
+/** 轮询 /runs 直到该次任务结束，然后展示结果、改动文件并跳转 */
+function pollUntilDone(runId: string | number | null) {
+  stopPolling()
+  waitingSince = Date.now()
+
+  const poll = () => {
+    pollTimer = 0
+    if (!mounted) return
+
+    getDevAgentRuns()
+      .then((data) => {
+        applyRunsData(data)
+
+        if (data?.running && Date.now() - waitingSince < RECONNECT_MAX_WAIT) {
+          pollTimer = window.setTimeout(poll, RECONNECT_POLL_INTERVAL)
+          return
+        }
+
+        let current: DevAgentRunRecord | null = null
+        for (const item of runs.value) {
+          if (String(item.id) === String(runId)) {
+            current = item
+            break
+          }
+        }
+        if (!current && runs.value.length) current = runs.value[0] ?? null
+
+        stopBusy()
+        if (current) {
+          lastResult.value = current
+          selectedRunId.value = current.id
+          renderResult(current, false)
+          setHint(
+            current.ok
+              ? t('devMode.doneHintLocal')
+              : t('devMode.doneFailed', { reason: current.error || t('devMode.exitCodeLabel', { code: current.exitCode }) }),
+          )
+          jumpToChangedPage(current.files || [])
+        } else {
+          setHint(t('devMode.taskEnded'))
+        }
+
+        const callback = pollComplete
+        stopPolling()
+        if (callback) callback()
+      })
+      .catch(() => {
+        // 网络抖动继续重试，不打断重连
+        pollTimer = window.setTimeout(poll, RECONNECT_POLL_INTERVAL)
+      })
+  }
+
+  poll()
+}
+
+/** 接管「后端还在跑」的任务：进入执行态并轮询到它结束 */
+function adoptRunning(record: DevAgentRunRecord | DevAgentRunResult | null) {
+  if (generating.value) return
+
+  enterBusy('devMode.runningWait')
+  const runRecord = record as DevAgentRunRecord | null
+  if (runRecord) {
+    lastResult.value = runRecord
+    selectedRunId.value = runRecord.id ?? null
+    if (runRecord.prompt && !draft.value) draft.value = runRecord.prompt
+  }
+
+  pollComplete = () => {
+    stopBusy()
+    refreshRuns()
+  }
+
+  pollUntilDone(runRecord?.id ?? null)
+}
+
+/** 挂载/刷新时恢复上下文：还在跑就接回执行态，否则展示最近一次结果 */
+function syncComposer(statusData: { running?: boolean; lastRun?: DevAgentRunResult | null } | null | undefined) {
+  if (statusData?.running) {
+    adoptRunning(null)
+    return
+  }
+
+  const last = statusData?.lastRun || null
+  if (last) {
+    lastResult.value = last
+    renderResult(last, false)
+    setHint(
+      last.ok
+        ? t('devMode.lastDone')
+        : t('devMode.lastFailed', { reason: last.error || t('devMode.exitCodeLabel', { code: last.exitCode }) }),
+    )
+    return
+  }
+
+  getDevAgentRuns()
+    .then((data) => {
+      applyRunsData(data)
+      if (data?.running) {
+        adoptRunning(runs.value[0] || null)
+        return
+      }
+      if (runs.value.length) {
+        const latest = runs.value[0] ?? null
+        if (!latest) return
+        lastResult.value = latest
+        selectedRunId.value = latest.id
+        renderResult(latest, false)
+        setHint(t('devMode.historyRestored'))
+      }
+    })
+    .catch(() => {
+      /* 忽略：历史拉取失败不影响输入 */
+    })
+}
+
+/** 读取运行环境状态（dsh 是否就绪 + 最近一次结果 + 是否正在跑） */
+function loadStatus() {
+  getDevAgentStatus()
+    .then((data) => {
+      ready.value = !!data?.ready
+      if (ready.value) {
+        setStatus(t('devMode.readyStatus', { cwd: data?.cwd || '—' }))
+        setHint(t('devMode.readyHint'))
+      } else {
+        const reason = data?.hint || t('devMode.notReadyHint')
+        setStatus(reason, true)
+        setHint(reason, true)
+      }
+      syncComposer(data || {})
+    })
+    .catch((error: any) => {
+      ready.value = false
+      const message = error?.message || t('devMode.statusFailed')
+      setStatus(message, true)
+      setHint(message, true)
+    })
+}
+
+/**
+ * Composer Setting
+ * 输入 / 语音 / 发送
+ */
+
+/** Enter 发送，Shift + Enter 换行 */
+function handleInputKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
+  event.preventDefault()
+  handleGenerate()
+}
+
+/** 语音识别的确定结果「追加」到输入框 */
+function appendRecognized(text: string) {
+  const value = String(text || '').trim()
+  if (!value) return
+
+  let existing = draft.value
+  if (existing && !/[\s，。；、,.;]$/.test(existing)) existing += ' '
+  draft.value = existing + value
+  interim.value = ''
+  speechNote.value = ''
+  saveDraftNow()
+}
+
+/** 切到文字模式后把焦点放回输入框 */
+function focusInput() {
+  nextTick(() => inputRef.value?.focus())
+}
+
+/** 进入语音模式：先把 UI 切到音轨形态，再申请麦克风 */
+function enterVoiceMode() {
+  mode.value = 'voice'
+  interim.value = ''
+  speechNote.value = ''
+  setHint(t('devMode.micRequesting'))
+  voice?.start().catch(() => {
+    // 兜底：任何麦克风异常都只提示，不允许未捕获异常
+    setHint(t('devMode.audioFailed'), true)
+    fallbackToText()
+  })
+}
+
+/** 退出语音模式 */
+function exitVoiceMode(hintKey?: string) {
+  mode.value = 'text'
+  interim.value = ''
+  speechNote.value = ''
+  voice?.stop()
+  if (hintKey) setHint(t(hintKey))
+}
+
+/** 麦克风/识别不可用时自动退回文字输入 */
+function fallbackToText() {
+  if (mode.value === 'voice') exitVoiceMode('devMode.fallbackToText')
+}
+
+function handleToggleMode() {
+  if (mode.value === 'voice') {
+    exitVoiceMode('devMode.switchedToText')
+    focusInput()
+    return
+  }
+  enterVoiceMode()
+}
+
+/** 草稿落盘（防抖，避免每敲一个字都写 localStorage） */
+function saveDraftNow() {
+  if (draftTimer) {
+    window.clearTimeout(draftTimer)
+    draftTimer = 0
+  }
+  saveDevModeDraft(draft.value)
+}
+
+watch(draft, () => {
+  if (draftTimer) window.clearTimeout(draftTimer)
+  draftTimer = window.setTimeout(() => {
+    draftTimer = 0
+    saveDevModeDraft(draft.value)
+  }, DRAFT_SAVE_DELAY)
+})
+
+/** 提交任务：调 /generate（同步阻塞，可能跑几分钟），完成后展示结果并跳转 */
+async function handleGenerate() {
+  if (generating.value) return
+
+  const prompt = draft.value.trim()
+  if (!prompt) {
+    setHint(t('devMode.emptyPrompt'), true)
+    return
+  }
+  if (!ready.value) {
+    setHint(t('devMode.notReady'), true)
+    return
+  }
+
+  // 提交时收回麦克风：避免把环境音当成新的需求
+  if (mode.value === 'voice') {
+    voice?.suspend()
+    interim.value = ''
+  }
+
+  enterBusy('devMode.runningHint')
+
+  try {
+    const record = await generateByDevAgent(prompt)
+    lastResult.value = record
+    selectedRunId.value = (record as DevAgentRunRecord).id ?? null
+    renderResult(record, false)
+    setHint(
+      record.ok
+        ? t('devMode.doneHintLocal')
+        : t('devMode.doneFailed', { reason: record.error || t('devMode.exitCodeLabel', { code: record.exitCode }) }),
+    )
+    if (record.ok) {
+      draft.value = ''
+      saveDraftNow()
+    }
+    jumpToChangedPage(record.files || [])
+  } catch (error: any) {
+    // 超时/网络抖动时后端可能还在跑：先接回执行态，而不是直接报失败
+    try {
+      const status = await getDevAgentStatus()
+      if (status?.running) {
+        stopBusy()
+        adoptRunning(null)
+        return
+      }
+    } catch {
+      /* 忽略：状态也拿不到就按失败处理 */
+    }
+
+    const message = error?.message || t('devMode.requestFailed')
+    lastResult.value = {
+      ok: false,
+      exitCode: null,
+      duration: 0,
+      output: '',
+      reasoningTail: '',
+      files: [],
+      finishedAt: new Date().toISOString(),
+      error: message,
+    }
+    renderResult(lastResult.value, true)
+    setHint(t('devMode.generateFailed'), true)
+  } finally {
+    if (generating.value && !pollTimer) stopBusy()
+    refreshRuns()
+  }
+}
+
+/**
+ * Canvas / Frame Setting
+ * 球体与音轨
+ */
+
+function tick() {
+  rafId = 0
+  if (document.hidden || !mounted) return
+
+  rafId = window.requestAnimationFrame(tick)
+  const now = performance.now()
+  const level = readLevel(voice?.node ?? null, voice?.data ?? null)
+
+  mesh?.frame(now, level, generating.value)
+  if (mode.value === 'voice' && waveRef.value) {
+    drawWave(waveRef.value, voice?.node ?? null, voice?.data ?? null)
+  }
+}
+
+function startLoop() {
+  if (!rafId && mounted) rafId = window.requestAnimationFrame(tick)
+}
+
+/** 舞台尺寸变化时重新量一次（球心/半径跟着窗口走） */
+function measure() {
+  mesh?.measure(stageRef.value)
+  if (mode.value === 'voice' && waveRef.value) {
+    drawWave(waveRef.value, voice?.node ?? null, voice?.data ?? null)
+  }
+}
+
+/** 切到后台就停掉帧循环，回来再继续 */
+function handleVisibility() {
+  if (!mounted) return
+  if (document.hidden) {
+    if (rafId) {
+      window.cancelAnimationFrame(rafId)
+      rafId = 0
+    }
+    return
+  }
+  startLoop()
+}
+
+/**
+ * Lifecycle
+ * 生命周期
+ */
+
+onMounted(() => {
+  mounted = true
+
+  if (meshRef.value) mesh = new SphereMesh(meshRef.value)
+  voice = new VoiceInput({
+    onFinalText: (text) => appendRecognized(text),
+    onInterimText: (text) => {
+      interim.value = text
+    },
+    onHint: (key, isError) => {
+      speechNote.value = key
+      setHint(t(key), isError)
+    },
+    onFallback: (key) => {
+      speechNote.value = key
+      exitVoiceMode()
+    },
+  })
+
+  measure()
+  startLoop()
+  window.addEventListener('resize', measure)
+  document.addEventListener('visibilitychange', handleVisibility)
+
+  // 刷新/重开后自动接回后端状态（包含正在跑的任务）
+  loadStatus()
+  refreshRuns()
+})
+
+onBeforeUnmount(() => {
+  mounted = false
+  window.removeEventListener('resize', measure)
+  document.removeEventListener('visibilitychange', handleVisibility)
+  handleDockDragEnd()
+  stopPolling()
+  if (rafId) {
+    window.cancelAnimationFrame(rafId)
+    rafId = 0
+  }
+  if (draftTimer) {
+    window.clearTimeout(draftTimer)
+    draftTimer = 0
+  }
+  saveDevModeDraft(draft.value)
+  voice?.stop()
+  voice = null
+  mesh = null
+})
+</script>
+
+<style lang="scss" scoped>@import url("./index.scss");</style>

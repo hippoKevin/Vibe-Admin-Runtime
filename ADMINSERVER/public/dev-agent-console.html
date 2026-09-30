@@ -1649,18 +1649,43 @@
   /* ==================================================================
    * 8. 执行：提交任务 + 完成后通知主窗口
    * ================================================================== */
+  /**
+   * 通知承载本页面的主窗口。
+   * 本页面会被两种方式打开：
+   *   1) 系统页面里的悬浮层 iframe（window.parent）；
+   *   2) 独立窗口（window.opener，兼容老用法）。
+   */
+  function notifyParent(message) {
+    var host = (window.parent && window.parent !== window) ? window.parent : window.opener;
+    if (!host) return false;
+    try {
+      host.postMessage(message, '*');
+      return true;
+    } catch (error) {
+      /* 忽略：主窗口可能已关闭 */
+      return false;
+    }
+  }
+
   /** 完成后通知主窗口（稍等一会儿，让 Vite 热更新先落到主页面，消息才不会被刷掉） */
   function notifyOpener(files) {
     var list = Array.isArray(files) ? files : [];
     window.setTimeout(function () {
-      try {
-        if (window.opener && !window.opener.closed) {
-          window.opener.postMessage({ type: 'vibe-admin-dev-applied', files: list }, '*');
-        }
-      } catch (error) {
-        /* 忽略：主窗口可能已关闭 */
-      }
+      notifyParent({ type: 'vibe-admin-dev-applied', files: list });
     }, 1500);
+  }
+
+  /**
+   * 「退出」：优先请主窗口收起悬浮层，主窗口不在时退化为关窗口。
+   * 注意不能只调 window.close()：被 iframe 嵌入时它关不掉任何东西。
+   */
+  function requestExit() {
+    if (notifyParent({ type: 'vibe-admin-dev-close' })) return;
+    try {
+      window.close();
+    } catch (error) {
+      /* 忽略：非脚本打开的窗口关不掉，属于浏览器行为 */
+    }
   }
 
   function renderResult(record, errorText) {
@@ -1977,6 +2002,114 @@
   /* ==================================================================
    * 11. 状态与初始化
    * ================================================================== */
+  /* ==================================================================
+   * 11.5 刷新后自动恢复 / 重连
+   *
+   * 真正的任务状态在后端进程里（running + 最近 20 次历史），所以整页刷新
+   * 只影响前端表现，Agent 不会被打断。这里在加载时把状态接回来：
+   *   - 若后端还有任务在跑：直接进入执行态（球体消失、环形波纹、生成中…），
+   *     并轮询 /runs 直到该次任务结束，然后正常展示结果与改动文件，并通知主窗口；
+   *   - 若已有最近一次结果：把它显示出来，刷新后不丢上下文。
+   * ================================================================== */
+
+  /** 重连轮询间隔（毫秒） */
+  var RECONNECT_POLL_INTERVAL = 2500;
+
+  /** 重连轮询定时器 */
+  var reconnectTimer = 0;
+
+  /** 还在等后端那次任务结束时的时间上限（毫秒），超时就不再当作「执行中」 */
+  var RECONNECT_MAX_WAIT = 30 * 60 * 1000;
+
+  /** 进入执行态（球体消失 + 环形波纹 + 生成中…） */
+  function enterBusy(hint) {
+    state.generating = true;
+    document.body.classList.add('is-busy');
+    resultCard.hidden = true;
+    setHint(hint || '正在执行，请稍候…');
+    syncSendButton();
+  }
+
+  /** 退出执行态 */
+  function leaveBusy() {
+    state.generating = false;
+    document.body.classList.remove('is-busy');
+    syncSendButton();
+  }
+
+  /**
+   * 接管后端那次还在跑的任务：切到执行态并轮询到它结束
+   * @param record 已知的历史记录（可为 null）
+   */
+  function adoptRunning(record) {
+    if (state.generating) return;
+
+    var waitingSince = Date.now();
+    enterBusy('后端有一个任务正在执行，正在等待它结束…');
+
+    if (record) {
+      state.selectedRunId = record.id;
+      if (record.prompt) {
+        state.text = record.prompt;
+        promptInput.value = record.prompt;
+      }
+    }
+
+    function stopPolling() {
+      if (reconnectTimer) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = 0;
+      }
+    }
+
+    function poll() {
+      reconnectTimer = 0;
+      if (!TOKEN) return;
+
+      api('/runs').then(function (data) {
+        var items = (data && Array.isArray(data.items)) ? data.items : [];
+        state.runs = items;
+        state.runsRunning = !!(data && data.running);
+        if (state.panelOpen) renderPanel();
+
+        var current = null;
+        for (var i = 0; i < items.length; i += 1) {
+          if (record && String(items[i].id) === String(record.id)) {
+            current = items[i];
+            break;
+          }
+        }
+
+        if (data && data.running && Date.now() - waitingSince < RECONNECT_MAX_WAIT) {
+          reconnectTimer = window.setTimeout(poll, RECONNECT_POLL_INTERVAL);
+          return;
+        }
+
+        // 任务结束：收掉执行态，展示结果并通知主窗口（稍后会跳转到被改动的页面）
+        leaveBusy();
+        if (current) {
+          state.lastResult = current;
+          state.selectedRunId = current.id;
+          renderResult(current, '');
+          if (current.ok) {
+            state.text = '';
+            promptInput.value = '';
+          }
+          setHint(current.ok ? '执行完成，已通知主窗口' : ('执行结束但未成功：' + (current.error || '退出码 ' + current.exitCode)));
+          notifyOpener(current.files);
+        } else {
+          setHint('任务已结束');
+        }
+        if (state.panelOpen) renderPanel();
+      }).catch(function () {
+        // 网络抖动时继续重试，不打断重连
+        reconnectTimer = window.setTimeout(poll, RECONNECT_POLL_INTERVAL);
+      });
+    }
+
+    poll();
+  }
+
   function loadStatus() {
     if (!TOKEN) {
       setStatus('未登录/请从系统里重新打开', true);
@@ -1997,12 +2130,57 @@
         setHint(state.readyHint, true);
       }
       syncSendButton();
+      syncComposer(data);
     }).catch(function (error) {
       state.ready = false;
       state.readyHint = (error && error.message) || '状态获取失败';
       setStatus(state.readyHint, true);
       setHint(state.readyHint, true);
       syncSendButton();
+    });
+  }
+
+  /**
+   * 刷新后恢复上下文：
+   *   1) 后端还在跑 → 接管那次任务（执行态 + 轮询到结束）；
+   *   2) 否则把最近一次结果/历史显示出来。
+   */
+  function syncComposer(statusData) {
+    if (statusData && statusData.running) {
+      adoptRunning(null);
+      return;
+    }
+
+    var last = (statusData && statusData.lastRun) ? statusData.lastRun : null;
+    if (last) {
+      state.lastResult = last;
+      state.selectedRunId = last.id || state.selectedRunId;
+      renderResult(last, '');
+      setHint(last.ok ? '上次执行已完成' : ('上次执行未成功：' + (last.error || '退出码 ' + last.exitCode)));
+      if (state.panelOpen) renderPanel();
+      return;
+    }
+
+    // 没有 lastRun 时退一步看历史（后端重启后 lastRun 可能为空但历史还在）
+    if (!TOKEN) return;
+    api('/runs').then(function (data) {
+      var items = (data && Array.isArray(data.items)) ? data.items : [];
+      state.runs = items;
+      state.runsRunning = !!(data && data.running);
+      if (data && data.running) {
+        adoptRunning(items[0] || null);
+        return;
+      }
+      if (items.length) {
+        var latest = items[0];
+        state.lastResult = latest;
+        state.selectedRunId = latest.id;
+        renderResult(latest, '');
+        setHint('已恢复最近一次执行记录');
+        if (state.panelOpen) renderPanel();
+      }
+    }).catch(function () {
+      /* 忽略：历史拉取失败不影响输入 */
     });
   }
 
@@ -2023,7 +2201,7 @@
     $('panelCloseBtn').addEventListener('click', closePanel);
     $('refreshBtn').addEventListener('click', function () { refreshRuns(); });
     alphaRange.addEventListener('input', handleAlphaInput);
-    $('exitBtn').addEventListener('click', function () { window.close(); });
+    $('exitBtn').addEventListener('click', requestExit);
 
     window.addEventListener('resize', function () {
       measureStage();
@@ -2055,7 +2233,8 @@
       });
       observer.observe(stageEl);
     }
-    refreshRuns();
+
+    // 执行历史由 loadStatus / syncComposer 里的重连逻辑负责拉取（面板展开时还会再刷一次）
   }
 
   boot();

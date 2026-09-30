@@ -1,0 +1,612 @@
+/* ===== 开发模式：应用内原生组件 + 一层浅色幕布 ===== */
+
+.dev-mode {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  /* 幕布本体不接收鼠标事件：页面其余区域照常可点（用户还要看主页面被改的结果） */
+  pointer-events: none;
+  color: var(--td-text-color-primary, #1b2431);
+  font-size: calc(13px * var(--app-font-scale, 1));
+}
+
+/* 浅色半透明幕布：页面内容透过它仍然可见，视觉上就是「系统之上蒙了一层幕布」 */
+.dev-mode__veil {
+  position: fixed;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.72);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+
+/* ===== 球体神经网络画布（整屏、不接收鼠标事件） ===== */
+.dev-mode__mesh {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  transition: opacity 520ms ease;
+}
+
+.dev-mode--busy .dev-mode__mesh {
+  opacity: 0;
+}
+
+/* ===== 执行态：球体消失，只剩向外释放的波纹 ===== */
+.dev-mode__rings {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 420ms ease;
+}
+
+.dev-mode__rings--busy {
+  opacity: 1;
+}
+
+.dev-mode__ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 160vmax;
+  height: 160vmax;
+  border: 3px solid rgba(59, 91, 255, 0.95);
+  border-radius: 50%;
+  box-shadow: 0 0 30px rgba(59, 91, 255, 0.5), inset 0 0 30px rgba(59, 91, 255, 0.3);
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.04);
+}
+
+.dev-mode__rings--busy .dev-mode__ring {
+  animation: dev-mode-ring-release 3.6s cubic-bezier(0.22, 0.58, 0.32, 1) infinite;
+}
+
+.dev-mode__ring--1 {
+  border-color: rgba(0, 176, 255, 0.95);
+  box-shadow: 0 0 30px rgba(0, 176, 255, 0.55), inset 0 0 30px rgba(0, 176, 255, 0.32);
+}
+
+.dev-mode__ring--2 {
+  border-color: rgba(112, 87, 255, 0.95);
+  box-shadow: 0 0 30px rgba(112, 87, 255, 0.55), inset 0 0 30px rgba(112, 87, 255, 0.32);
+  animation-delay: 0.9s;
+}
+
+.dev-mode__ring--3 {
+  border-color: rgba(255, 79, 176, 0.92);
+  box-shadow: 0 0 30px rgba(255, 79, 176, 0.5), inset 0 0 30px rgba(255, 79, 176, 0.3);
+  animation-delay: 1.8s;
+}
+
+.dev-mode__ring--4 {
+  border-color: rgba(0, 200, 170, 0.92);
+  box-shadow: 0 0 30px rgba(0, 200, 170, 0.5), inset 0 0 30px rgba(0, 200, 170, 0.3);
+  animation-delay: 2.7s;
+}
+
+@keyframes dev-mode-ring-release {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.04);
+  }
+
+  55% {
+    opacity: 0.75;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+/* ===== 结构：顶栏 + 舞台（球体）+ 底部交互区 ===== */
+.dev-mode__layout {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  /* 只有具体控件接收鼠标事件，空白处的点击会穿透到系统页面 */
+  pointer-events: none;
+}
+
+.dev-mode__topbar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: calc(8px * var(--app-font-scale, 1));
+  padding: calc(10px * var(--app-font-scale, 1)) calc(14px * var(--app-font-scale, 1)) calc(6px * var(--app-font-scale, 1));
+  /* 顶栏这一条横穿整屏：只有「退出」按钮接收鼠标事件，品牌/状态文字一律穿透，
+     否则会把系统页面自己的顶栏（搜索框等）挡住 */
+  pointer-events: none;
+}
+
+.dev-mode__brand {
+  color: var(--td-text-color-primary, #1b2431);
+  font-family: consolas, menlo, monaco, "courier new", monospace;
+  font-size: calc(11px * var(--app-font-scale, 1));
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.dev-mode__status {
+  overflow: hidden;
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--td-text-color-secondary, #5a6880);
+  font-size: calc(11px * var(--app-font-scale, 1));
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.dev-mode__status--error {
+  color: var(--td-error-color, #d4380d);
+}
+
+.dev-mode__btn {
+  flex: 0 0 auto;
+  height: calc(28px * var(--app-font-scale, 1));
+  padding: 0 calc(12px * var(--app-font-scale, 1));
+  border: 1px solid var(--td-component-stroke, rgba(27, 36, 49, 0.12));
+  border-radius: calc(14px * var(--app-font-scale, 1));
+  background: var(--td-bg-color-container, rgba(255, 255, 255, 0.86));
+  color: var(--td-text-color-primary, #1b2431);
+  font-family: inherit;
+  font-size: calc(12px * var(--app-font-scale, 1));
+  cursor: pointer;
+  pointer-events: auto;
+  transition: border-color 200ms ease, color 200ms ease, background 200ms ease;
+}
+
+.dev-mode__btn:hover:not(:disabled) {
+  border-color: var(--td-brand-color, #3b5bff);
+  color: var(--td-brand-color, #3b5bff);
+}
+
+.dev-mode__btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.dev-mode__btn--primary {
+  border-color: transparent;
+  background: var(--td-brand-color, #3b5bff);
+  color: #fff;
+}
+
+.dev-mode__btn--primary:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--td-brand-color-hover, #2c49e0);
+  color: #fff;
+}
+
+.dev-mode__btn--icon {
+  width: calc(28px * var(--app-font-scale, 1));
+  padding: 0;
+  border-radius: 50%;
+}
+
+.dev-mode__btn--on {
+  border-color: var(--td-brand-color, #3b5bff);
+  color: var(--td-brand-color, #3b5bff);
+}
+
+/* 舞台：球体绘制区（canvas 是整屏的，这里只提供中心点与尺寸） */
+.dev-mode__stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  pointer-events: none;
+}
+
+/* 执行中的「生成中…」提示（在球心位置） */
+.dev-mode__busy {
+  position: absolute;
+  top: 56%;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(8px * var(--app-font-scale, 1));
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.dev-mode__busy-spin {
+  width: calc(26px * var(--app-font-scale, 1));
+  height: calc(26px * var(--app-font-scale, 1));
+  border: 2px solid rgba(59, 91, 255, 0.28);
+  border-top-color: var(--td-brand-color, #3b5bff);
+  border-radius: 50%;
+  animation: dev-mode-spin 1s linear infinite;
+}
+
+@keyframes dev-mode-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.dev-mode__busy-text {
+  color: var(--td-brand-color, #3b5bff);
+  font-size: calc(13px * var(--app-font-scale, 1));
+  letter-spacing: 0.06em;
+}
+
+/* ===== 底部交互区（球的正下方，也就是原来音轨的位置） ===== */
+.dev-mode__dock {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  /* 收窄成「球正下方的一条」，与原来音轨位置对齐；
+     满宽会横跨整屏、压住系统页面自己的底部分页 */
+  align-self: center;
+  width: min(680px, 92vw);
+  gap: calc(8px * var(--app-font-scale, 1));
+  padding: 0 calc(14px * var(--app-font-scale, 1)) calc(12px * var(--app-font-scale, 1));
+  /* 容器本身不接收鼠标事件，只有具体控件接收：
+     这样底部这条空白（含两侧、控件之间）的点击依然穿透到系统页面 */
+  pointer-events: none;
+}
+
+/* 拖动把手：音轨位置可上下移动，位置持久化 */
+.dev-mode__dock-grip {
+  align-self: center;
+  width: calc(38px * var(--app-font-scale, 1));
+  height: calc(4px * var(--app-font-scale, 1));
+  border-radius: calc(2px * var(--app-font-scale, 1));
+  background: var(--td-component-stroke, rgba(27, 36, 49, 0.18));
+  cursor: ns-resize;
+  touch-action: none;
+  pointer-events: auto;
+}
+
+/* 本次结果 */
+.dev-mode__result {
+  padding: calc(8px * var(--app-font-scale, 1)) calc(10px * var(--app-font-scale, 1));
+  border: 1px solid var(--td-component-stroke, rgba(27, 36, 49, 0.12));
+  border-radius: calc(12px * var(--app-font-scale, 1));
+  background: var(--td-bg-color-container, rgba(255, 255, 255, 0.8));
+  font-size: calc(11px * var(--app-font-scale, 1));
+  pointer-events: auto;
+}
+
+.dev-mode__result-head {
+  display: flex;
+  align-items: center;
+  gap: calc(6px * var(--app-font-scale, 1));
+  color: var(--td-text-color-secondary, #5a6880);
+}
+
+.dev-mode__dot {
+  width: calc(7px * var(--app-font-scale, 1));
+  height: calc(7px * var(--app-font-scale, 1));
+  border-radius: 50%;
+  background: var(--td-success-color, #12a150);
+}
+
+.dev-mode__dot--error {
+  background: var(--td-error-color, #d4380d);
+}
+
+.dev-mode__files {
+  display: flex;
+  flex-direction: column;
+  gap: calc(2px * var(--app-font-scale, 1));
+  max-height: calc(66px * var(--app-font-scale, 1));
+  overflow: auto;
+  margin: calc(6px * var(--app-font-scale, 1)) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dev-mode__file {
+  display: flex;
+  align-items: center;
+  gap: calc(6px * var(--app-font-scale, 1));
+  min-width: 0;
+  color: var(--td-text-color-primary, #1b2431);
+}
+
+.dev-mode__tag {
+  flex: 0 0 auto;
+  padding: 0 calc(4px * var(--app-font-scale, 1));
+  border: 1px solid var(--td-component-stroke, rgba(27, 36, 49, 0.12));
+  border-radius: calc(4px * var(--app-font-scale, 1));
+  color: var(--td-text-color-secondary, #5a6880);
+  font-size: calc(10px * var(--app-font-scale, 1));
+}
+
+.dev-mode__tag--modified {
+  color: var(--td-brand-color, #3b5bff);
+}
+
+.dev-mode__tag--added {
+  color: var(--td-success-color, #12a150);
+}
+
+.dev-mode__tag--deleted {
+  color: var(--td-error-color, #d4380d);
+}
+
+.dev-mode__tag--untracked {
+  color: var(--td-warning-color, #d98200);
+}
+
+.dev-mode__path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dev-mode__muted {
+  color: var(--td-text-color-placeholder, #8b97ab);
+}
+
+/* 输入框上方的「Agent 执行过程」开关 */
+.dev-mode__toggle {
+  display: flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: calc(6px * var(--app-font-scale, 1));
+  height: calc(26px * var(--app-font-scale, 1));
+  padding: 0 calc(12px * var(--app-font-scale, 1));
+  border: 1px solid var(--td-component-stroke, rgba(27, 36, 49, 0.12));
+  border-radius: calc(13px * var(--app-font-scale, 1));
+  background: var(--td-bg-color-container, rgba(255, 255, 255, 0.86));
+  color: var(--td-text-color-secondary, #5a6880);
+  font-family: inherit;
+  font-size: calc(12px * var(--app-font-scale, 1));
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.dev-mode__toggle:hover {
+  border-color: var(--td-brand-color, #3b5bff);
+  color: var(--td-brand-color, #3b5bff);
+}
+
+.dev-mode__caret {
+  font-size: calc(10px * var(--app-font-scale, 1));
+}
+
+/* 输入区 / 音轨：同一位置两种形态 */
+.dev-mode__row {
+  display: flex;
+  align-items: flex-end;
+  gap: calc(8px * var(--app-font-scale, 1));
+  min-height: calc(66px * var(--app-font-scale, 1));
+  pointer-events: none;
+}
+
+.dev-mode__field {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: calc(66px * var(--app-font-scale, 1));
+  max-height: calc(148px * var(--app-font-scale, 1));
+  padding: calc(8px * var(--app-font-scale, 1)) calc(10px * var(--app-font-scale, 1));
+  border: 1px solid var(--td-component-stroke, rgba(27, 36, 49, 0.12));
+  border-radius: calc(12px * var(--app-font-scale, 1));
+  outline: none;
+  background: var(--td-bg-color-container, rgba(255, 255, 255, 0.92));
+  color: var(--td-text-color-primary, #1b2431);
+  font-family: inherit;
+  font-size: calc(12px * var(--app-font-scale, 1));
+  line-height: 1.5;
+  resize: none;
+  transition: border-color 200ms ease;
+  pointer-events: auto;
+}
+
+.dev-mode__field::placeholder {
+  color: var(--td-text-color-placeholder, #8b97ab);
+}
+
+.dev-mode__field:focus {
+  border-color: var(--td-brand-color, #3b5bff);
+}
+
+/* 白色波形音轨（深色玻璃条：白色波形在浅色幕布上必须有深色底衬才看得清） */
+.dev-mode__track {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: calc(66px * var(--app-font-scale, 1));
+  align-items: center;
+  padding: 0 calc(8px * var(--app-font-scale, 1));
+  border: 1px solid rgba(23, 32, 58, 0.45);
+  border-radius: calc(12px * var(--app-font-scale, 1));
+  background: linear-gradient(180deg, rgba(23, 32, 58, 0.84), rgba(23, 32, 58, 0.74));
+  pointer-events: auto;
+}
+
+.dev-mode__wave {
+  display: block;
+  width: 100%;
+  height: calc(46px * var(--app-font-scale, 1));
+}
+
+.dev-mode__track-live {
+  position: absolute;
+  right: calc(8px * var(--app-font-scale, 1));
+  bottom: 2px;
+  left: calc(8px * var(--app-font-scale, 1));
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: calc(10px * var(--app-font-scale, 1));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dev-mode__hint {
+  min-height: calc(16px * var(--app-font-scale, 1));
+  color: var(--td-text-color-secondary, #5a6880);
+  font-size: calc(11px * var(--app-font-scale, 1));
+  word-break: break-word;
+  /* 纯文字提示不接收点击，避免挡住系统页面底部 */
+  pointer-events: none;
+}
+
+.dev-mode__hint--error {
+  color: var(--td-error-color, #d4380d);
+}
+
+/* ===== Agent 执行过程面板（背景透明度可调） ===== */
+.dev-mode__panel {
+  position: absolute;
+  z-index: 5;
+  top: calc(40px * var(--app-font-scale, 1));
+  right: calc(10px * var(--app-font-scale, 1));
+  left: calc(10px * var(--app-font-scale, 1));
+  display: flex;
+  flex-direction: column;
+  max-height: 58vh;
+  border: 1px solid var(--td-component-stroke, rgba(27, 36, 49, 0.12));
+  border-radius: calc(12px * var(--app-font-scale, 1));
+  background: rgba(255, 255, 255, var(--panel-alpha, 0.86));
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--td-shadow-3, 0 12px 32px rgba(27, 36, 49, 0.12));
+  pointer-events: auto;
+}
+
+.dev-mode__panel-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: calc(8px * var(--app-font-scale, 1));
+  padding: calc(8px * var(--app-font-scale, 1)) calc(10px * var(--app-font-scale, 1));
+  border-bottom: 1px solid var(--td-component-stroke, rgba(27, 36, 49, 0.12));
+}
+
+.dev-mode__panel-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: calc(12px * var(--app-font-scale, 1));
+  font-weight: 600;
+}
+
+.dev-mode__panel-alpha {
+  display: flex;
+  align-items: center;
+  gap: calc(4px * var(--app-font-scale, 1));
+  color: var(--td-text-color-secondary, #5a6880);
+  font-size: calc(10px * var(--app-font-scale, 1));
+  white-space: nowrap;
+}
+
+.dev-mode__panel-alpha input {
+  width: calc(66px * var(--app-font-scale, 1));
+  accent-color: var(--td-brand-color, #3b5bff);
+}
+
+.dev-mode__panel-body {
+  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: calc(8px * var(--app-font-scale, 1)) calc(10px * var(--app-font-scale, 1)) calc(10px * var(--app-font-scale, 1));
+  font-size: calc(11px * var(--app-font-scale, 1));
+}
+
+.dev-mode__section {
+  margin-top: calc(10px * var(--app-font-scale, 1));
+}
+
+.dev-mode__section:first-child {
+  margin-top: 0;
+}
+
+.dev-mode__section-title {
+  margin-bottom: calc(4px * var(--app-font-scale, 1));
+  color: var(--td-text-color-secondary, #5a6880);
+  font-size: calc(10px * var(--app-font-scale, 1));
+  letter-spacing: 0.06em;
+}
+
+.dev-mode__kv {
+  display: flex;
+  gap: calc(6px * var(--app-font-scale, 1));
+  margin-bottom: calc(3px * var(--app-font-scale, 1));
+  color: var(--td-text-color-primary, #1b2431);
+}
+
+.dev-mode__kv-key {
+  flex: 0 0 auto;
+  color: var(--td-text-color-secondary, #5a6880);
+}
+
+.dev-mode__kv-val {
+  min-width: 0;
+  word-break: break-word;
+}
+
+.dev-mode__pre {
+  overflow: auto;
+  max-height: calc(132px * var(--app-font-scale, 1));
+  margin: 0;
+  padding: calc(6px * var(--app-font-scale, 1)) calc(8px * var(--app-font-scale, 1));
+  border: 1px solid var(--td-component-stroke, rgba(27, 36, 49, 0.12));
+  border-radius: calc(8px * var(--app-font-scale, 1));
+  background: var(--td-bg-color-secondarycontainer, rgba(246, 248, 252, 0.72));
+  color: var(--td-text-color-primary, #1b2431);
+  font-family: consolas, menlo, monaco, "courier new", monospace;
+  font-size: calc(10px * var(--app-font-scale, 1));
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.dev-mode__history {
+  display: flex;
+  flex-direction: column;
+  gap: calc(2px * var(--app-font-scale, 1));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dev-mode__history-item {
+  display: flex;
+  align-items: center;
+  gap: calc(6px * var(--app-font-scale, 1));
+  padding: calc(3px * var(--app-font-scale, 1)) calc(6px * var(--app-font-scale, 1));
+  border: 1px solid transparent;
+  border-radius: calc(8px * var(--app-font-scale, 1));
+  color: var(--td-text-color-secondary, #5a6880);
+  cursor: pointer;
+}
+
+.dev-mode__history-item:hover {
+  border-color: var(--td-component-stroke, rgba(27, 36, 49, 0.12));
+  color: var(--td-text-color-primary, #1b2431);
+}
+
+.dev-mode__history-item--active {
+  border-color: var(--td-brand-color, #3b5bff);
+  color: var(--td-brand-color, #3b5bff);
+}
+
+.dev-mode__mono {
+  flex: 0 0 auto;
+  font-family: consolas, menlo, monaco, "courier new", monospace;
+}
+
+.dev-mode__history-prompt {
+  overflow: hidden;
+  flex: 1 1 auto;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

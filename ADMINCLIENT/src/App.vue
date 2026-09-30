@@ -6,6 +6,9 @@
   import { useI18n } from 'vue-i18n'
   import { initTheme } from '@/utils/theme'
   import { initFontScale } from '@/utils/fontScale'
+  // 开发模式：应用内的原生组件（挂这里，不随路由/页面级热更新卸载）
+  import DevModeConsole from '@/components/DevModeConsole/index.vue'
+  import { devModeOpen } from '@/utils/devMode'
 
   const { locale } = useI18n()
   const route = useRoute()
@@ -34,6 +37,13 @@
 <template>
   <t-config-provider :globalConfig="tdGlobalConfig">
     <RouterView />
+
+    <!--
+      开发模式：原生 Vue 组件 + 一层浅色幕布（不是弹窗、不是 iframe、不开新窗口）。
+      挂载点固定在 App.vue，页面级热更新不会把它卸载；开关/草稿/面板状态存 localStorage，
+      整页刷新后会自动恢复，并向后端接回正在跑的任务。
+    -->
+    <DevModeConsole v-if="devModeOpen" />
   </t-config-provider>
 </template>
 
