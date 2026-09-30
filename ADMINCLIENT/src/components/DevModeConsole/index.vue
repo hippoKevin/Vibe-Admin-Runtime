@@ -5,7 +5,12 @@
     - 球体 / 输入区 / 面板这些「实体」各自接收鼠标事件；
     - 挂载点固定在 App.vue，页面级热更新不会把它卸载，状态全部持久化在 localStorage。
   -->
-  <div class="dev-mode" :class="{ 'dev-mode--busy': generating }" data-testid="dev-mode">
+  <div
+    class="dev-mode"
+    :class="{ 'dev-mode--busy': generating }"
+    data-testid="dev-mode"
+    :style="{ '--veil-alpha': String(veilAlpha / 100) }"
+  >
     <div class="dev-mode__veil" data-testid="dev-mode-veil" />
 
     <div class="dev-mode__rings" :class="{ 'dev-mode__rings--busy': generating }" aria-hidden="true">
@@ -147,6 +152,18 @@
             @input="handleAlphaInput"
           />
         </label>
+        <label class="dev-mode__panel-alpha">
+          {{ $t('devMode.veilAlpha') }}
+          <input
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            :value="veilAlpha"
+            data-testid="dev-console-veil-alpha"
+            @input="handleVeilAlphaInput"
+          />
+        </label>
         <button
           type="button"
           class="dev-mode__btn"
@@ -260,10 +277,12 @@ import {
   devModeDraft,
   devModePanelAlpha,
   devModePanelOpen,
+  devModeVeilAlpha,
   saveDevModeDockOffset,
   saveDevModeDraft,
   saveDevModePanelAlpha,
   saveDevModePanelOpen,
+  saveDevModeVeilAlpha,
 } from '@/utils/devMode'
 import { SphereMesh, drawWave, readLevel } from './controller/mesh'
 import { VoiceInput } from './controller/voice'
@@ -276,7 +295,8 @@ import { VoiceInput } from './controller/voice'
  * 「Agent 执行过程」面板 + 透明度滑块、执行态球体消失只剩波纹、退出按钮。
  *
  * 与「独立页面」版本的区别：
- *   1) 只做一层整屏浅色幕布来区分（幕布 pointer-events: none，页面照常可点）；
+ *   1) 只做一层整屏浅色幕布来区分（幕布 pointer-events: none，页面照常可点、看得清；
+ *      浓度只留「淡淡一层」，面板头部可调）；
  *   2) 不再用 postMessage / window.open —— 完成后直接按菜单归一比对并 router.push；
  *   3) 状态全部持久化，刷新后自动恢复；挂载时请求 /status 与 /runs，
  *      若后端还有任务在跑就直接进入执行态并轮询到结束（Agent 不会被打断）。
@@ -326,6 +346,8 @@ const generating = ref(false)
 const panelOpen = ref<boolean>(devModePanelOpen.value)
 /** 面板背景透明度（0~100） */
 const panelAlpha = ref<number>(devModePanelAlpha.value)
+/** 整屏幕布浓度（0~100）：只要一层淡淡的幕布，系统页面必须看得清 */
+const veilAlpha = ref<number>(devModeVeilAlpha.value)
 /** 音轨位置（相对舞台底部的偏移 px） */
 const dockOffset = ref<number>(devModeDockOffset.value)
 /** 顶部状态栏文字与是否为错误态 */
@@ -540,6 +562,17 @@ function handleAlphaInput(event: Event) {
   const value = Number((event.target as HTMLInputElement).value)
   panelAlpha.value = value
   saveDevModePanelAlpha(value)
+}
+
+/**
+ * 幕布浓度：滑块输入即写 localStorage
+ *
+ * 往左拉 → 幕布更淡 → 底下的系统页面更清楚（0 = 完全没有幕布）。
+ */
+function handleVeilAlphaInput(event: Event) {
+  const value = Number((event.target as HTMLInputElement).value)
+  veilAlpha.value = value
+  saveDevModeVeilAlpha(value)
 }
 
 /**

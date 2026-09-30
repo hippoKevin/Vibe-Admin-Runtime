@@ -113,6 +113,7 @@ export default {
     resultMeta: '用时 {duration} · 退出码 {code} · {time}',
     panelTitle: 'Agent 执行过程',
     panelAlpha: '背景透明度',
+    veilAlpha: '幕布浓度',
     panelRefresh: '刷新',
     panelCollapse: '收起',
     panelLatest: '最近一次运行',

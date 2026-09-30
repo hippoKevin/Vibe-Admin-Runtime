@@ -5,7 +5,7 @@ import { ref } from 'vue'
  *
  * 开发模式的界面本体是应用内的 Vue 组件（见 components/DevModeConsole），
  * 挂载点固定在 App.vue —— 页面级热更新不会把它卸载。这里保存的状态会在
- * Vite 整页刷新后自动恢复：开关、输入草稿、面板展开、面板透明度、音轨位置。
+ * Vite 整页刷新后自动恢复：开关、输入草稿、面板展开、面板透明度、幕布浓度、音轨位置。
  * 真正的任务状态在后端进程里（running + 最近 20 次历史），刷新只影响前端表现。
  */
 
@@ -21,11 +21,22 @@ export const DEV_MODE_PANEL_KEY = 'dev-mode-panel-open'
 /** 面板背景透明度（0~100） */
 export const DEV_MODE_ALPHA_KEY = 'dev-mode-panel-alpha'
 
+/** 整屏幕布浓度（0~100）：幕布白色的占比，越低越能看清底下的系统页面 */
+export const DEV_MODE_VEIL_ALPHA_KEY = 'dev-mode-veil-alpha'
+
 /** 底部输入区（音轨）位置：相对舞台底部的偏移，拖动后保持 */
 export const DEV_MODE_DOCK_KEY = 'dev-mode-dock-pos'
 
 /** 面板透明度默认值（%） */
 export const PANEL_ALPHA_DEFAULT = 86
+
+/**
+ * 幕布浓度默认值（%）
+ *
+ * 只要一层「淡淡的幕布」：整屏压一层极浅的白，系统页面照常看得清、读得懂。
+ * 历史上这里是 72% + blur(4px)，等于把系统糊掉了，所以默认值降到 18%。
+ */
+export const VEIL_ALPHA_DEFAULT = 18
 
 /** 音轨位置默认值（相对舞台底部的像素偏移） */
 export const DOCK_OFFSET_DEFAULT = 0
@@ -93,6 +104,11 @@ export const devModePanelAlpha = ref<number>(
   readNumber(DEV_MODE_ALPHA_KEY, PANEL_ALPHA_DEFAULT, 0, 100),
 )
 
+/** 整屏幕布浓度（%） */
+export const devModeVeilAlpha = ref<number>(
+  readNumber(DEV_MODE_VEIL_ALPHA_KEY, VEIL_ALPHA_DEFAULT, 0, 100),
+)
+
 /** 音轨位置（相对舞台底部的偏移 px，正数 = 往下） */
 export const devModeDockOffset = ref<number>(
   readNumber(DEV_MODE_DOCK_KEY, DOCK_OFFSET_DEFAULT, DOCK_OFFSET_MIN, DOCK_OFFSET_MAX),
@@ -140,6 +156,13 @@ export function saveDevModePanelAlpha(value: number) {
   const next = Math.min(100, Math.max(0, Math.round(Number(value) || 0)))
   devModePanelAlpha.value = next
   writeNumber(DEV_MODE_ALPHA_KEY, next)
+}
+
+/** 保存幕布浓度（%） */
+export function saveDevModeVeilAlpha(value: number) {
+  const next = Math.min(100, Math.max(0, Math.round(Number(value) || 0)))
+  devModeVeilAlpha.value = next
+  writeNumber(DEV_MODE_VEIL_ALPHA_KEY, next)
 }
 
 /** 保存音轨位置（相对舞台底部的偏移 px） */

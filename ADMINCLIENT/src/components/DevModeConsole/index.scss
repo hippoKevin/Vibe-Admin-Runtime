@@ -10,13 +10,14 @@
   font-size: calc(13px * var(--app-font-scale, 1));
 }
 
-/* 浅色半透明幕布：页面内容透过它仍然可见，视觉上就是「系统之上蒙了一层幕布」 */
+/* 淡淡的幕布：整屏只压一层极浅的白，底下的系统页面照常看得清、读得懂、点得到
+   浓度由 --veil-alpha 控制（0 = 完全透明，1 = 全白遮死），面板头部的
+   「幕布浓度」滑块实时改写它并持久化，默认 18%。
+   刻意不用 backdrop-filter：模糊会把系统页面糊掉，等于看不见系统。 */
 .dev-mode__veil {
   position: fixed;
   inset: 0;
-  background: rgba(255, 255, 255, 0.72);
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
+  background: rgba(255, 255, 255, var(--veil-alpha, 0.18));
   pointer-events: none;
 }
 
@@ -485,10 +486,23 @@
 .dev-mode__panel-head {
   display: flex;
   flex: 0 0 auto;
+  /* 两个滑块（背景透明度 + 幕布浓度）加上按钮，窄屏时换行而不是被压扁 */
+  flex-wrap: wrap;
   align-items: center;
   gap: calc(8px * var(--app-font-scale, 1));
   padding: calc(8px * var(--app-font-scale, 1)) calc(10px * var(--app-font-scale, 1));
   border-bottom: 1px solid var(--td-component-stroke, rgba(27, 36, 49, 0.12));
+}
+
+/* 两个浓度滑块（面板背景 / 整屏幕布）共用一套样式 */
+.dev-mode__panel-alpha {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: calc(4px * var(--app-font-scale, 1));
+  color: var(--td-text-color-secondary, #5a6880);
+  font-size: calc(10px * var(--app-font-scale, 1));
+  white-space: nowrap;
 }
 
 .dev-mode__panel-title {

@@ -113,6 +113,7 @@ export default {
     resultMeta: 'took {duration} · exit code {code} · {time}',
     panelTitle: 'Agent Execution',
     panelAlpha: 'Opacity',
+    veilAlpha: 'Veil opacity',
     panelRefresh: 'Refresh',
     panelCollapse: 'Collapse',
     panelLatest: 'Latest run',
