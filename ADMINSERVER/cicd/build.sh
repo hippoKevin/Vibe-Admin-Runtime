@@ -3,6 +3,7 @@
 # CI：安装依赖 + 构建后端（可选跑单元测试）
 # 用法：bash ADMINSERVER/cicd/build.sh
 #      RUN_TESTS=1 bash ADMINSERVER/cicd/build.sh
+#      SKIP_INSTALL=1 bash ADMINSERVER/cicd/build.sh   # 依赖已装好时跳过安装
 # ============================================================
 
 set -euo pipefail
@@ -15,8 +16,12 @@ echo "[cicd] 包管理器：${PM}"
 
 cd "${SERVER_DIR}"
 
-echo "[cicd] 安装依赖..."
-pkg_install "${PM}"
+if [ "${SKIP_INSTALL:-0}" != "1" ]; then
+  echo "[cicd] 安装依赖..."
+  pkg_install "${PM}"
+else
+  echo "[cicd] 跳过依赖安装（SKIP_INSTALL=1）"
+fi
 
 echo "[cicd] 编译（nest build）..."
 run_script "${PM}" build

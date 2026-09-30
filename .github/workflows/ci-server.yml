@@ -51,9 +51,16 @@ jobs:
           pnpm -v
           bash --version | head -n 1
 
-      # 具体步骤都在后端 CI/CD 目录里，本地与 CI 行为一致
-      - name: 安装依赖 · 构建 · 单元测试
-        run: RUN_TESTS=1 bash cicd/build.sh
+      # 具体步骤都在后端 CI/CD 目录里，本地与 CI 行为一致；
+      # 拆成三步是为了失败时能直接看出是安装、编译还是测试出的问题
+      - name: 安装依赖
+        run: bash cicd/install.sh
+
+      - name: 构建
+        run: SKIP_INSTALL=1 bash cicd/build.sh
+
+      - name: 单元测试
+        run: bash cicd/test.sh
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4

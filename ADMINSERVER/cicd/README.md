@@ -11,6 +11,7 @@ GitHub Actions 只负责「触发 + 调用脚本」，因此**本地、服务器
 | `common.sh` | 公共函数：定位目录、选择包管理器、安装依赖、执行 npm/pnpm 脚本 |
 | `install.sh` | 安装依赖（CI 与部署共用） |
 | `build.sh` | 安装依赖 + `nest build`；`RUN_TESTS=1` 时额外跑单元测试 |
+| `test.sh` | 单元测试（`--passWithNoTests`，暂无用例时也算通过） |
 | `deploy.sh` | 服务器端部署：拉代码 → 装依赖 → 构建 → 重启 PM2 → 健康检查 |
 | `restart.sh` | PM2 重启后端（应用名取 `PM2_APP_NAME`，默认 `main`） |
 | `health-check.sh` | 轮询 `/hippoadmin/system-ops/ping`，判断服务是否恢复 |
@@ -21,6 +22,9 @@ GitHub Actions 只负责「触发 + 调用脚本」，因此**本地、服务器
 # 只构建（CI 用；加 RUN_TESTS=1 跑单元测试）
 bash ADMINSERVER/cicd/build.sh
 RUN_TESTS=1 bash ADMINSERVER/cicd/build.sh
+
+# 单独跑单元测试
+bash ADMINSERVER/cicd/test.sh
 
 # 服务器部署（在服务器仓库根目录执行）
 DEPLOY_BRANCH=main PM2_APP_NAME=main bash ADMINSERVER/cicd/deploy.sh
@@ -35,6 +39,7 @@ bash ADMINSERVER/cicd/health-check.sh
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `PKG_MANAGER` | 自动 | `pnpm` / `npm`；默认「存在 `pnpm-lock.yaml` 且装了 pnpm」就用 pnpm |
+| `SKIP_INSTALL` | `0` | `1` = 跳过依赖安装（依赖已装好时用，CI 里安装与构建分步执行） |
 | `DEPLOY_BRANCH` | `main` | 部署分支 |
 | `SKIP_GIT` | `0` | `1` = 跳过拉代码，只重新构建与重启 |
 | `PM2_APP_NAME` | `main` | PM2 应用名，需与 `ecosystem.config.js` 的 `name` 一致 |

@@ -46,8 +46,11 @@ jobs:
         run: npm ci
 
       # 生产构建必须通过（vite build）
+      # 单包体积较大，给 Node 留足堆内存，避免 CI 上构建到一半 OOM
       - name: 构建
         run: npm run build-only
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
 
       # 注意：仓库目前存在约 100 处历史遗留类型错误（vue-tsc），
       # 因此类型检查先只做提示、不阻断流水线；清理完成后删掉
