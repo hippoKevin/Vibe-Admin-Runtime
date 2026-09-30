@@ -23,8 +23,17 @@ const IGNORED_PATH_PARTS = [
 const SECRET_KEY_REGEX = /(password|passwd|pwd|secret|token|authorization|apikey|api_key|private)/i;
 
 /** 摘要与 UA 的最大长度 */
-const SUMMARY_MAX_LENGTH = 480;
+const SUMMARY_MAX_LENGTH = 120;
 const UA_MAX_LENGTH = 250;
+
+/** 单个参数值超过这个长度就视为长文本，不记进摘要 */
+const SUMMARY_VALUE_MAX_LENGTH = 40;
+
+/** 摘要里最多展示几个字段 */
+const SUMMARY_MAX_FIELDS = 6;
+
+/** 摘要里优先展示的字段名（id / 名称类字段最有用） */
+const SUMMARY_PRIORITY_KEYS = /(id|name|account|username|user|role|menu|dept|unit|title|code|status|type|key|count|total)/i;
 
 /**
  * 接口 → 人话操作名
@@ -285,43 +294,69 @@ export class OperationLogInterceptor implements NestInterceptor {
         return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
-    /** 参数摘要：脱敏 + 截断，敏感字段打成 ****** */
+    /**
+     * 参数摘要：把入参压成「key=value, key=value」的短文本
+     *
+     * 只记短文本，不记 JSON——系统日志页面要让人一眼看懂「改了什么/删了什么」。
+     * 规则：数组记成 key=[N项]；字符串超过 40 字符视为长文本直接不记；
+     *      密码/密钥类字段只留字段名（password=***）；最多记 6 个字段。
+     */
     private buildSummary(request: any): string | null {
-        const source: Record<string, any> = {};
+        const pairs: string[] = [];
 
-        if (request?.params && Object.keys(request.params).length) source.params = request.params;
-        if (request?.query && Object.keys(request.query).length) source.query = request.query;
-        if (request?.body && typeof request.body === 'object' && Object.keys(request.body).length) {
-            source.body = request.body;
-        }
+        const pushScalar = (key: string, value: any) => {
+            if (pairs.length >= SUMMARY_MAX_FIELDS) return;
 
-        if (!Object.keys(source).length) return null;
+            if (SECRET_KEY_REGEX.test(key)) {
+                pairs.push(`${key}=***`);
+                return;
+            }
+            if (value === null || value === undefined || value === '') return;
 
-        try {
-            const text = JSON.stringify(this.mask(source));
-            return text.length > SUMMARY_MAX_LENGTH ? `${text.slice(0, SUMMARY_MAX_LENGTH)}…` : text;
-        } catch {
-            return null;
-        }
-    }
+            const text = String(value);
+            if (text.length > SUMMARY_VALUE_MAX_LENGTH) return;
+            pairs.push(`${key}=${text}`);
+        };
 
-    /** 递归脱敏 */
-    private mask(value: any, depth = 0): any {
-        if (depth > 4) return '…';
-        if (Array.isArray(value)) return value.slice(0, 10).map((item) => this.mask(item, depth + 1));
-        if (value && typeof value === 'object') {
-            const result: Record<string, any> = {};
-            for (const [key, item] of Object.entries(value)) {
-                if (SECRET_KEY_REGEX.test(key)) {
-                    result[key] = item ? '******' : item;
+        const collect = (value: any, depth = 0) => {
+            if (!value || typeof value !== 'object' || depth > 3) return;
+            if (pairs.length >= SUMMARY_MAX_FIELDS) return;
+
+            if (Array.isArray(value)) {
+                value.slice(0, 3).forEach((item) => collect(item, depth + 1));
+                return;
+            }
+
+            const entries = Object.entries(value as Record<string, any>);
+            // 关键字段（id/name/username…）优先展示
+            const ordered = [
+                ...entries.filter(([key]) => SUMMARY_PRIORITY_KEYS.test(key)),
+                ...entries.filter(([key]) => !SUMMARY_PRIORITY_KEYS.test(key)),
+            ];
+
+            for (const [key, item] of ordered) {
+                if (pairs.length >= SUMMARY_MAX_FIELDS) break;
+
+                if (Array.isArray(item)) {
+                    pairs.push(`${key}=[${item.length}项]`);
                     continue;
                 }
-                result[key] = this.mask(item, depth + 1);
+                if (item && typeof item === 'object') {
+                    collect(item, depth + 1);
+                    continue;
+                }
+                pushScalar(key, item);
             }
-            return result;
-        }
-        if (typeof value === 'string' && value.length > 200) return `${value.slice(0, 200)}…`;
-        return value;
+        };
+
+        collect(request?.params);
+        collect(request?.query);
+        collect(request?.body);
+
+        if (!pairs.length) return null;
+
+        const text = pairs.join(', ');
+        return text.length > SUMMARY_MAX_LENGTH ? `${text.slice(0, SUMMARY_MAX_LENGTH)}…` : text;
     }
 
     /**
