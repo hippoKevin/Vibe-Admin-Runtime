@@ -43,7 +43,8 @@
 
 
 <script setup lang="js">
-defineProps(['subMenuList'])
 import { getMenuIconComponent } from '@/utils/menuIcon';
 import { translateServerText } from '@/locales';
+
+defineProps(['subMenuList'])
 </script>
