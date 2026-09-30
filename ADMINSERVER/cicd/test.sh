@@ -15,6 +15,15 @@ PM="$(detect_pkg_manager)"
 echo "[cicd] 包管理器：${PM}"
 
 cd "${SERVER_DIR}"
+
+# 没有任何 .spec.ts 用例时直接跳过：
+# 一是没必要启动 jest，二是 pnpm 的严格 node_modules 布局下
+# jest 的部分传递依赖（jest-environment-node 等）解析不到会直接报错。
+if ! find src -name '*.spec.ts' -print -quit | grep -q .; then
+  echo "[cicd] src 下暂无用例，跳过单元测试"
+  exit 0
+fi
+
 echo "[cicd] 单元测试..."
 run_script "${PM}" test -- --passWithNoTests
 
