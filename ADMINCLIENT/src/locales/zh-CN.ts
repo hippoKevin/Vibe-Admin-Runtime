@@ -89,6 +89,10 @@ export default {
     outputEmpty: '本次没有返回文本答复',
     moreFiles: '等 {count} 个文件',
     reloadTip: '{seconds} 秒后刷新查看结果',
+    notLoggedIn: '未登录，请先登录后再使用开发模式',
+    popupBlocked: '浏览器拦截了开发模式控制台窗口，请允许弹出窗口后重试',
+    appliedJump: '已跳转到被修改的页面：{name}',
+    appliedNoMatch: '本次改动没有对应的页面，未跳转',
     fileStatus: {
       modified: '修改',
       added: '新增',

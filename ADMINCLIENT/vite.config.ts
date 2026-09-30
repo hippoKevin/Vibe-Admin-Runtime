@@ -40,6 +40,13 @@ export default defineConfig(({ mode }: ConfigEnv): UserConfig => {
           target: 'http://' + env.VITE_SERVER_URL, // 代理地址
           changeOrigin: true, // 更新请求的源
           rewrite: (path) => path.replace(/^\/proxy/, '') // 重写路径
+        },
+        // 开发模式独立控制台（/hippoadmin/dev-agent/console）：
+        // 页面由后端直接吐出、不经过 Vite，避免被 HMR / 整页刷新刷掉。
+        // 生产环境由 nginx 代理同样的路径。
+        '/hippoadmin': {
+          target: 'http://' + env.VITE_SERVER_URL,
+          changeOrigin: true
         }
       },
       host: env.VITE_OPEN_CLIENT,

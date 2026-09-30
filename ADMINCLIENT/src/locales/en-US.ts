@@ -89,6 +89,10 @@ export default {
     outputEmpty: 'No text reply was returned',
     moreFiles: 'and {count} more files',
     reloadTip: 'Reloading in {seconds}s',
+    notLoggedIn: 'Not signed in, please sign in before using Dev Mode',
+    popupBlocked: 'The browser blocked the Dev Mode console window, please allow pop-ups and retry',
+    appliedJump: 'Jumped to the modified page: {name}',
+    appliedNoMatch: 'No page matches this change, staying on the current page',
     fileStatus: {
       modified: 'Modified',
       added: 'Added',
