@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { Brackets, DataSource, Repository } from 'typeorm';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -17,7 +17,8 @@ import {
     serializeEnvContent,
 } from 'src/common/utils/file/env-file.util';
 import { logFileName, resolveLogDir } from 'src/common/logger/file.logger';
-import { ReadLogDto, SaveEnvDto } from 'src/dto/system/system-ops/system-ops.dto';
+import { AuditListDto, ReadLogDto, SaveEnvDto } from 'src/dto/system/system-ops/system-ops.dto';
+import { OperationLogEntity } from 'src/entities/system/other/operation_log.entity';
 
 /** 重启延迟（毫秒）：先让接口把结果返回前端，再执行重启 */
 const RESTART_DELAY = 1000;
@@ -28,6 +29,26 @@ const LOG_FILE_REGEX = /^[A-Za-z0-9_-]+\.log$/;
 /** 日志默认显示行数 / 最大显示行数 */
 const LOG_DEFAULT_LINES = 200;
 const LOG_MAX_LINES = 2000;
+
+/** 指标采样间隔（毫秒）与保留点数：120 × 5s = 最近 10 分钟 */
+const SAMPLE_INTERVAL = 5000;
+const MAX_SAMPLES = 120;
+
+/** 一个指标采样点 */
+export interface MetricsSample {
+    /** 采样时间 */
+    time: string;
+    /** CPU 使用率（%） */
+    cpuPercent: number;
+    /** 1 分钟平均负载（Linux 有效，Windows 恒为 0） */
+    load1: number;
+    /** 内存使用率（%） */
+    memUsedPercent: number;
+    /** 进程堆内存（字节） */
+    heapUsed: number;
+    /** 进程常驻内存（字节） */
+    rss: number;
+}
 
 /**
  * 系统运维服务
@@ -40,6 +61,9 @@ export class SystemOpsService {
     constructor(
         @InjectDataSource('etp_default_sql')
         private readonly dataSource: DataSource,
+
+        @InjectRepository(OperationLogEntity, 'etp_default_sql')
+        private readonly operationLogRepository: Repository<OperationLogEntity>,
     ) {}
 
     // ==================================================================
@@ -105,6 +129,95 @@ export class SystemOpsService {
                 activeFile: this.resolveActiveEnvFile(),
             },
         };
+    }
+
+    // ==================================================================
+    // 关于系统 · 指标采样（BI 看板用）
+    // ==================================================================
+
+    /** 采样点缓冲 */
+    private readonly samples: MetricsSample[] = [];
+
+    /** 采样定时器 */
+    private sampleTimer: NodeJS.Timeout | null = null;
+
+    /** 上一次 CPU 时间片，用于算使用率（跨平台，Windows 也能用） */
+    private lastCpuTimes = os.cpus().map((cpu) => cpu.times);
+
+    /**
+     * 指标趋势：最近若干采样点 + 当前磁盘与运行时长，供 BI 看板画图表
+     */
+    getMetrics() {
+        this.startSampler();
+
+        return {
+            interval: SAMPLE_INTERVAL,
+            points: MAX_SAMPLES,
+            cpuCores: os.cpus().length,
+            samples: this.samples,
+            current: {
+                ...(this.samples[this.samples.length - 1] ?? null),
+                uptime: Math.floor(process.uptime()),
+                disk: this.getDiskInfo(),
+            },
+        };
+    }
+
+    /**
+     * 首次访问时开启采样
+     * unref 让定时器不阻止进程退出（CI 里不会挂住）
+     */
+    private startSampler() {
+        if (this.sampleTimer) return;
+
+        this.collectSample();
+        this.sampleTimer = setInterval(() => this.collectSample(), SAMPLE_INTERVAL);
+        this.sampleTimer.unref?.();
+    }
+
+    /** 采集一个采样点，超出上限丢弃最旧的 */
+    private collectSample() {
+        const memory = process.memoryUsage();
+        const totalMemory = os.totalmem();
+
+        this.samples.push({
+            time: new Date().toISOString(),
+            cpuPercent: this.getCpuPercent(),
+            load1: Number((os.loadavg()[0] ?? 0).toFixed(2)),
+            memUsedPercent: totalMemory
+                ? Math.round(((totalMemory - os.freemem()) / totalMemory) * 100)
+                : 0,
+            heapUsed: memory.heapUsed,
+            rss: memory.rss,
+        });
+
+        if (this.samples.length > MAX_SAMPLES) this.samples.shift();
+    }
+
+    /** CPU 使用率：用两次采样的时间片差值计算 */
+    private getCpuPercent(): number {
+        const current = os.cpus().map((cpu) => cpu.times);
+        let idleDiff = 0;
+        let totalDiff = 0;
+
+        current.forEach((times, index) => {
+            const prev = this.lastCpuTimes[index] ?? times;
+            const idle = times.idle - prev.idle;
+            const total =
+                times.user - prev.user +
+                (times.nice - prev.nice) +
+                (times.sys - prev.sys) +
+                (times.irq - prev.irq) +
+                idle;
+
+            idleDiff += idle;
+            totalDiff += total;
+        });
+
+        this.lastCpuTimes = current;
+
+        if (totalDiff <= 0) return 0;
+        return Math.min(100, Math.max(0, Math.round((1 - idleDiff / totalDiff) * 100)));
     }
 
     // ==================================================================
@@ -182,6 +295,76 @@ export class SystemOpsService {
         this.logger.log(`系统运维：已清空日志文件 ${path.basename(filePath)}`);
 
         return { message: '日志已清空', file: path.basename(filePath) };
+    }
+
+    // ==================================================================
+    // 系统日志 · 操作审计
+    // ==================================================================
+
+    /**
+     * 操作审计列表
+     * 支持关键字（操作名/摘要/接口/返回消息/操作人）、操作人、操作名、结果筛选与分页
+     */
+    async getAuditList(query: AuditListDto) {
+        const ep = query?.ep ?? {};
+        const pageNumber = Math.max(1, Number(query?.paging?.pageNumber) || 1);
+        const pageSize = Math.min(100, Math.max(1, Number(query?.paging?.pageSize) || 20));
+
+        const builder = this.operationLogRepository.createQueryBuilder('log');
+
+        const username = String(ep.username ?? '').trim();
+        if (username) {
+            builder.andWhere('log.username LIKE :username', { username: `%${username}%` });
+        }
+
+        const action = String(ep.action ?? '').trim();
+        if (action) {
+            builder.andWhere('log.action_name = :action', { action });
+        }
+
+        const success = String(ep.success ?? '').trim();
+        if (success === 'true' || success === 'false') {
+            builder.andWhere('log.success = :success', { success: success === 'true' });
+        }
+
+        const keyword = String(ep.keyword ?? '').trim();
+        if (keyword) {
+            builder.andWhere(
+                new Brackets((where) => {
+                    where
+                        .where('log.action_name LIKE :keyword', { keyword: `%${keyword}%` })
+                        .orWhere('log.summary LIKE :keyword', { keyword: `%${keyword}%` })
+                        .orWhere('log.url LIKE :keyword', { keyword: `%${keyword}%` })
+                        .orWhere('log.result_message LIKE :keyword', { keyword: `%${keyword}%` })
+                        .orWhere('log.username LIKE :keyword', { keyword: `%${keyword}%` });
+                }),
+            );
+        }
+
+        const [data, total] = await builder
+            .orderBy('log.log_id', 'DESC')
+            .skip((pageNumber - 1) * pageSize)
+            .take(pageSize)
+            .getManyAndCount();
+
+        return { total, data };
+    }
+
+    /**
+     * 操作类型下拉：返回审计记录里出现过的操作名
+     */
+    async getAuditActions() {
+        const rows = await this.operationLogRepository
+            .createQueryBuilder('log')
+            .select('log.action_name', 'action_name')
+            .addSelect('COUNT(*)', 'total')
+            .where('log.action_name IS NOT NULL')
+            .groupBy('log.action_name')
+            .orderBy('total', 'DESC')
+            .limit(50)
+            .getRawMany();
+
+        return { names: rows.map((row) => row.action_name).filter(Boolean) };
     }
 
     // ==================================================================

@@ -58,3 +58,50 @@ export class ReadLogDto {
     @IsString()
     keyword?: string;
 }
+
+/** 操作审计查询条件（对应前端的 searchForm.ep） */
+export class AuditQueryDto {
+    /** 关键字：匹配操作名、摘要、接口、返回消息 */
+    @IsOptional()
+    @IsString()
+    keyword?: string;
+
+    /** 操作人账号（模糊匹配） */
+    @IsOptional()
+    @IsString()
+    username?: string;
+
+    /** 操作名（精确匹配，来自审计统计接口） */
+    @IsOptional()
+    @IsString()
+    action?: string;
+
+    /** 结果筛选：true / false / 空 */
+    @IsOptional()
+    @IsString()
+    success?: string;
+}
+
+/** 分页参数（对应前端的 searchForm.paging） */
+export class PagingQueryDto {
+    @IsOptional()
+    @IsString()
+    pageNumber?: string;
+
+    @IsOptional()
+    @IsString()
+    pageSize?: string;
+}
+
+/** 操作审计列表查询 */
+export class AuditListDto {
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => AuditQueryDto)
+    ep?: AuditQueryDto;
+
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => PagingQueryDto)
+    paging?: PagingQueryDto;
+}

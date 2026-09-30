@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Post, Query, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport'; // JWT 验证
 import { Public } from 'src/common/decorators/public.decorator';
-import { ReadLogDto, SaveEnvDto } from 'src/dto/system/system-ops/system-ops.dto';
+import { AuditListDto, ReadLogDto, SaveEnvDto } from 'src/dto/system/system-ops/system-ops.dto';
 import { SystemOpsService } from 'src/services/system/system-ops.service';
 
 /**
@@ -41,6 +41,15 @@ export class SystemOpsController {
         return this.systemOpsService.getAbout();
     }
 
+    /**
+     * 指标趋势（BI 看板折线图数据源）
+     */
+    @Get('/metrics')
+    @UseGuards(AuthGuard('jwt'))
+    getMetrics() {
+        return this.systemOpsService.getMetrics();
+    }
+
     // ==================== 系统日志 ====================
 
     /**
@@ -71,6 +80,26 @@ export class SystemOpsController {
     @UseGuards(AuthGuard('jwt'))
     clearLog(@Body('file') file?: string) {
         return this.systemOpsService.clearLog(file);
+    }
+
+    /**
+     * 操作审计列表（系统日志页面的主数据）
+     * @param query 支持 ep（关键字/操作人/操作名/结果）与 paging
+     */
+    @Get('/audit/list')
+    @UseGuards(AuthGuard('jwt'))
+    @UsePipes(new ValidationPipe())
+    getAuditList(@Query() query: AuditListDto) {
+        return this.systemOpsService.getAuditList(query);
+    }
+
+    /**
+     * 操作类型下拉选项
+     */
+    @Get('/audit/actions')
+    @UseGuards(AuthGuard('jwt'))
+    getAuditActions() {
+        return this.systemOpsService.getAuditActions();
     }
 
     // ==================== 环境配置 ====================
