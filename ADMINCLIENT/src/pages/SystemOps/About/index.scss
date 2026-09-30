@@ -1,0 +1,130 @@
+/* ===== 由 index.vue 提取 ===== */
+
+/* 页面铺满内容区：与用户管理页保持一致 */
+.container {
+  height: calc(100vh - 110px);
+  display: flex;
+  flex-direction: column;
+
+  /* 卡片主体占满剩余空间，内部再按 flex 分配 */
+  :deep(.t-card__body) {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+}
+
+/* 工具条里的开关说明（在卡片头部，不在正文容器内） */
+.system-ops-about__switch-label {
+  font-size: calc(13px * var(--app-font-scale, 1));
+  color: var(--td-text-color-secondary);
+}
+
+.system-ops-about {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 10px 0;
+  /* 内容比内容区高时在卡片内部滚动，页面不出现大片空白 */
+  overflow-y: auto;
+
+  .system-ops-about__metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .system-ops-about__metric {
+    flex: 1 1 180px;
+    min-width: 160px;
+
+    :deep(.t-card__body) {
+      padding: 16px;
+    }
+  }
+
+  .system-ops-about__metric-name {
+    font-size: calc(13px * var(--app-font-scale, 1));
+    color: var(--td-text-color-secondary);
+  }
+
+  .system-ops-about__metric-value {
+    margin: 8px 0 6px;
+    font-size: calc(26px * var(--app-font-scale, 1));
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--td-brand-color);
+  }
+
+  .system-ops-about__metric-extra {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-height: 22px;
+  }
+
+  .system-ops-about__metric-tip {
+    font-size: calc(12px * var(--app-font-scale, 1));
+    color: var(--td-text-color-placeholder);
+    word-break: break-all;
+  }
+
+  .system-ops-about__card {
+    margin-bottom: 12px;
+  }
+
+  .system-ops-about__chart-tip {
+    margin-bottom: 4px;
+    font-size: calc(12px * var(--app-font-scale, 1));
+    color: var(--td-text-color-placeholder);
+  }
+
+  .system-ops-about__chart {
+    width: 100%;
+    height: 320px;
+  }
+
+  .system-ops-about__chart--small {
+    height: 240px;
+  }
+
+  .system-ops-about__distributions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+
+    .system-ops-about__card--half {
+      flex: 1 1 320px;
+      min-width: 280px;
+    }
+  }
+
+  .system-ops-about__empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 240px;
+    font-size: calc(13px * var(--app-font-scale, 1));
+    color: var(--td-text-color-placeholder);
+  }
+}
+
+/* 卡片底部（在卡片底部插槽，不在正文容器内） */
+.system-ops-about__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* 「最后更新」与「服务器时间」之间留出足够间距 */
+  gap: 32px;
+  font-size: calc(12px * var(--app-font-scale, 1));
+  color: var(--td-text-color-secondary);
+}
+
+.system-ops-about__footer-time {
+  margin-left: 32px;
+  color: var(--td-text-color-placeholder);
+}

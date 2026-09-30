@@ -63,59 +63,63 @@
     </template>
 
     <template #default>
-      <div>
-        <t-table
-          size="small"
-          :data="listData.data"
-          :columns="tableColumns"
-          :loading="listLoading"
-          row-key="log_id"
-          bordered
-          hover
-          resizable
-          :maxHeight="575"
-          tableLayout="fixed"
-        >
-          <!-- 时间 -->
-          <template #created_at="{ row }">
-            {{ formatDateTime(row.created_at) }}
-          </template>
+      <div class="system-ops-log__body">
+        <div ref="tableWrapRef" class="system-ops-log__table">
+          <t-table
+            size="small"
+            :data="listData.data"
+            :columns="tableColumns"
+            :loading="listLoading"
+            row-key="log_id"
+            bordered
+            hover
+            resizable
+            :maxHeight="tableMaxHeight"
+            tableLayout="fixed"
+          >
+            <!-- 时间 -->
+            <template #created_at="{ row }">
+              {{ formatDateTime(row.created_at) }}
+            </template>
 
-          <!-- 操作人 -->
-          <template #username="{ row }">
-            <span>{{ row.username || $t('systemOpsLog.unknownUser') }}</span>
-          </template>
+            <!-- 操作人 -->
+            <template #username="{ row }">
+              <span>{{ row.username || $t('systemOpsLog.unknownUser') }}</span>
+            </template>
 
-          <!-- 操作：中文操作名 + 一句人话描述 -->
-          <template #action="{ row }">
-            <div class="system-ops-log__action">
-              <div class="system-ops-log__action-name">{{ getActionName(row) }}</div>
-              <div class="system-ops-log__action-sentence">{{ buildSentence(row) }}</div>
-            </div>
-          </template>
+            <!-- 操作：只展示操作名，不再拼接含参数的句子 -->
+            <template #action="{ row }">
+              <span class="system-ops-log__action-name">{{ getActionName(row) }}</span>
+            </template>
 
-          <!-- 参数摘要 -->
-          <template #summary="{ row }">
-            <span :class="{ 'system-ops-log__muted': !row.summary }">
-              {{ row.summary || $t('systemOpsLog.emptySummary') }}
-            </span>
-          </template>
+            <!-- 参数摘要：统一压成短的 key=value 文本 -->
+            <template #summary="{ row }">
+              <span
+                class="system-ops-log__summary"
+                :class="{ 'system-ops-log__muted': !row.summary }"
+              >
+                {{ formatSummary(row.summary) || $t('systemOpsLog.emptySummary') }}
+              </span>
+            </template>
 
-          <!-- 结果 -->
-          <template #result="{ row }">
-            <t-space align="center" :size="6">
-              <t-tag :theme="row.success ? 'success' : 'danger'" variant="light" size="small">
-                {{ row.success ? $t('systemOpsLog.auditSuccess') : $t('systemOpsLog.auditFailed') }}
-              </t-tag>
-              <span class="system-ops-log__result-message">{{ row.result_message || '' }}</span>
-            </t-space>
-          </template>
+            <!-- 结果 -->
+            <template #result="{ row }">
+              <t-space align="center" :size="6">
+                <t-tag :theme="row.success ? 'success' : 'danger'" variant="light" size="small">
+                  {{ row.success ? $t('systemOpsLog.auditSuccess') : $t('systemOpsLog.auditFailed') }}
+                </t-tag>
+                <span class="system-ops-log__result-message">
+                  {{ formatResultMessage(row.result_message) }}
+                </span>
+              </t-space>
+            </template>
 
-          <!-- 耗时 -->
-          <template #duration="{ row }">
-            {{ $t('systemOpsLog.durationUnit', { ms: row.duration ?? '-' }) }}
-          </template>
-        </t-table>
+            <!-- 耗时 -->
+            <template #duration="{ row }">
+              {{ $t('systemOpsLog.durationUnit', { ms: row.duration ?? '-' }) }}
+            </template>
+          </t-table>
+        </div>
       </div>
     </template>
 
@@ -206,11 +210,12 @@ export default { name: 'SystemOpsLogPage' }
 
 <script lang="ts" setup>
 // 1. 第三方依赖
-import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
 import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
 import { RefreshIcon, SearchIcon } from 'tdesign-icons-vue-next'
 // 2. 工程内工具
 import { useI18n } from 'vue-i18n'
+import { formatSummaryText, truncateText } from '@/utils/common/formatSummary'
 // 3. 接口
 import * as api from './api'
 
@@ -219,10 +224,22 @@ const { t } = useI18n()
 /** 自动刷新间隔（毫秒） */
 const AUTO_REFRESH_INTERVAL = 5000
 
+/** 结果说明展示长度上限 */
+const RESULT_MESSAGE_MAX_LENGTH = 30
+
+/** 表格最大高度兜底值：容器还没量出来时使用 */
+const FALLBACK_TABLE_MAX_HEIGHT = 560
+/** 表格最大高度可用下限，量到的值比它还小说明没量准，改用兜底值 */
+const MIN_TABLE_MAX_HEIGHT = 240
+/** 表格底部预留空间，避免贴住卡片内边距 */
+const TABLE_MAX_HEIGHT_RESERVE = 8
+
 // 页面打开时
 onMounted(() => {
   getAuditData()
   loadActions()
+  nextTick(updateTableMaxHeight)
+  window.addEventListener('resize', updateTableMaxHeight)
 })
 
 // KeepAlive 切回本页时恢复自动刷新，并刷新一次审计列表
@@ -230,6 +247,7 @@ onActivated(() => {
   if (autoRefresh.value) startAutoRefresh()
   if (hasActivated) getAuditData()
   hasActivated = true
+  nextTick(updateTableMaxHeight)
 })
 
 // 切走后停掉定时器，避免后台空跑
@@ -239,6 +257,7 @@ onDeactivated(() => {
 
 onUnmounted(() => {
   stopAutoRefresh()
+  window.removeEventListener('resize', updateTableMaxHeight)
 })
 
 /**
@@ -270,6 +289,10 @@ const listData = ref({ data: [] as any[], total: 0 })
 const listLoading = ref(false)
 // 自动刷新开关
 const autoRefresh = ref(false)
+// 表格外层容器：用于动态测量表格可用高度
+const tableWrapRef = ref<HTMLElement | null>(null)
+// 表格最大高度（动态计算，不用写死的 575）
+const tableMaxHeight = ref(FALLBACK_TABLE_MAX_HEIGHT)
 
 // 操作类型下拉选项
 const actionNames = ref<string[]>([])
@@ -303,9 +326,9 @@ let hasActivated = false
 const tableColumns = computed<any[]>(() => [
   { colKey: 'created_at', title: t('systemOpsLog.colTime'), width: 160 },
   { colKey: 'username', title: t('systemOpsLog.colUser'), width: 120, ellipsis: true },
-  { colKey: 'action', title: t('systemOpsLog.colAction'), width: 260 },
+  { colKey: 'action', title: t('systemOpsLog.colAction'), width: 200, ellipsis: true },
   { colKey: 'summary', title: t('systemOpsLog.colSummary'), minWidth: 200, ellipsis: true },
-  { colKey: 'result', title: t('systemOpsLog.colResult'), width: 160 },
+  { colKey: 'result', title: t('systemOpsLog.colResult'), width: 200 },
   { colKey: 'duration', title: t('systemOpsLog.colDuration'), width: 100 },
   { colKey: 'ip', title: t('systemOpsLog.colIp'), width: 140, ellipsis: true }
 ])
@@ -385,20 +408,38 @@ function formatDateTime(value?: string | null): string {
 /** 操作名：优先用后端反查出的中文名，缺失时回退成「方法 + 地址」 */
 function getActionName(row: any): string {
   if (row?.action_name) return row.action_name
-  return t('systemOpsLog.fallbackAction', {
-    method: String(row?.method || '').toUpperCase(),
-    url: row?.url || ''
-  })
+
+  const method = String(row?.method || '').toUpperCase()
+  const url = row?.url || ''
+  if (!method && !url) return t('systemOpsLog.unknownAction')
+
+  return t('systemOpsLog.fallbackAction', { method, url })
 }
 
-/** 拼一句非技术人员也能看懂的操作描述：张三 · 删除用户 · 用户ID=5 · 删除成功 */
-function buildSentence(row: any): string {
-  return [
-    row?.username || t('systemOpsLog.unknownUser'),
-    getActionName(row),
-    row?.summary || t('systemOpsLog.emptySummary'),
-    row?.success ? t('systemOpsLog.auditSuccess') : t('systemOpsLog.auditFailed')
-  ].join(' · ')
+/** 参数摘要：把后端存的 JSON / 长摘要压成短的 key=value 文本 */
+function formatSummary(summary?: string | null): string {
+  return formatSummaryText(summary, (count) => t('systemOpsLog.arrayItems', { count }))
+}
+
+/** 结果说明：前端再截到 30 字，避免撑高行高 */
+function formatResultMessage(message?: string | null): string {
+  return truncateText(String(message ?? ''), RESULT_MESSAGE_MAX_LENGTH)
+}
+
+/**
+ * Update Table Height
+ * 动态计算表格最大高度：表格外层容器已被 flex 撑满内容区
+ * （卡片头部工具条、卡片底部分页在布局里已经先行扣减），
+ * 这里再留 8px 余量；量不到或量到的值过小时用兜底值。
+ */
+function updateTableMaxHeight() {
+  const wrap = tableWrapRef.value
+  if (!wrap) return
+
+  const available = wrap.clientHeight - TABLE_MAX_HEIGHT_RESERVE
+  tableMaxHeight.value = available >= MIN_TABLE_MAX_HEIGHT
+    ? Math.floor(available)
+    : FALLBACK_TABLE_MAX_HEIGHT
 }
 
 /** 组装查询参数：空条件不下发，避免后端把空串当成过滤值 */
@@ -574,101 +615,4 @@ function handleClearLog() {
 }
 </script>
 
-<style lang="scss" scoped>
-.system-ops-log__field {
-  width: 140px;
-
-  &--keyword {
-    width: 200px;
-  }
-
-  &--action {
-    width: 170px;
-  }
-
-  &--result {
-    width: 130px;
-  }
-
-  &--file {
-    width: 240px;
-  }
-}
-
-.system-ops-log__switch-label {
-  font-size: calc(13px * var(--app-font-scale, 1));
-  color: var(--td-text-color-secondary);
-}
-
-.system-ops-log__action {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  text-align: left;
-}
-
-.system-ops-log__action-name {
-  font-size: calc(13px * var(--app-font-scale, 1));
-  color: var(--td-text-color-primary);
-}
-
-.system-ops-log__action-sentence {
-  font-size: calc(12px * var(--app-font-scale, 1));
-  color: var(--td-text-color-placeholder);
-  word-break: break-all;
-}
-
-.system-ops-log__muted {
-  color: var(--td-text-color-placeholder);
-}
-
-.system-ops-log__result-message {
-  font-size: calc(12px * var(--app-font-scale, 1));
-  color: var(--td-text-color-secondary);
-  word-break: break-all;
-}
-
-.system-ops-log__drawer {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.system-ops-log__drawer-toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.system-ops-log__meta {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 16px;
-  font-size: calc(12px * var(--app-font-scale, 1));
-  color: var(--td-text-color-secondary);
-}
-
-.system-ops-log__meta-file {
-  margin-left: auto;
-  color: var(--td-text-color-placeholder);
-}
-
-.system-ops-log__log {
-  height: calc(100vh - 330px);
-  min-height: 240px;
-  margin: 0;
-  padding: 12px;
-  overflow: auto;
-  border: 1px solid var(--td-component-stroke);
-  border-radius: var(--td-radius-default);
-  background: var(--td-bg-color-container);
-  color: var(--td-text-color-primary);
-  font-family: Consolas, Monaco, 'Courier New', monospace;
-  font-size: calc(12px * var(--app-font-scale, 1));
-  line-height: 1.7;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-</style>
+<style lang="scss" scoped>@import url("./index.scss");</style>

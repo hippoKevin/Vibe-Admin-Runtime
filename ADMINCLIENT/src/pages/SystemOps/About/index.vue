@@ -53,23 +53,6 @@
         <div class="system-ops-about__distributions">
           <t-card
             class="system-ops-about__card system-ops-about__card--half"
-            :title="$t('systemOpsAbout.diskChartTitle')"
-          >
-            <template #default>
-              <v-chart
-                v-if="diskOption"
-                class="system-ops-about__chart system-ops-about__chart--small"
-                :option="diskOption"
-                autoresize
-              />
-              <div v-else class="system-ops-about__empty">
-                {{ $t('systemOpsAbout.diskUnavailable') }}
-              </div>
-            </template>
-          </t-card>
-
-          <t-card
-            class="system-ops-about__card system-ops-about__card--half"
             :title="$t('systemOpsAbout.memChartTitle')"
           >
             <template #default>
@@ -308,32 +291,6 @@ const trendOption = computed(() => {
   }
 })
 
-/** 磁盘占用饼图（已用 / 剩余） */
-const diskOption = computed(() => {
-  const disk = metrics.value?.current?.disk || about.value?.disk
-  if (!disk || !Number.isFinite(Number(disk.total))) return null
-
-  return {
-    tooltip: {
-      trigger: 'item',
-      formatter: (params: any) => `${params.name}: ${formatBytes(params.value)} (${params.percent}%)`,
-    },
-    legend: { bottom: 0 },
-    series: [
-      {
-        type: 'pie',
-        radius: ['45%', '70%'],
-        center: ['50%', '44%'],
-        label: { show: false },
-        data: [
-          { name: t('systemOpsAbout.used'), value: Number(disk.used) || 0 },
-          { name: t('systemOpsAbout.free'), value: Number(disk.free) || 0 },
-        ],
-      },
-    ],
-  }
-})
-
 /** 内存占用条形图（已用 / 剩余） */
 const memoryOption = computed(() => {
   const memory = about.value?.memory
@@ -380,8 +337,6 @@ const detailGroups = computed(() => {
   const memory = data.memory || {}
   const disk = data.disk
   const db = data.database || {}
-  const logs = data.logs || {}
-  const env = data.env || {}
 
   return [
     {
@@ -455,19 +410,6 @@ const detailGroups = computed(() => {
         { label: 'dbLatencyLabel', value: t('systemOpsAbout.latencyUnit', { ms: db.latency ?? '-' }) },
         // 连接失败时把错误原因也带出来，方便排查
         ...(db.error ? [{ label: 'dbError', value: String(db.error) }] : []),
-      ],
-    },
-    {
-      title: 'configInfo',
-      rows: [
-        { label: 'activeEnvFile', value: env.activeFile || '-' },
-        {
-          label: 'envFiles',
-          value: (env.files || []).map((item: any) => item.name).join(' , ') || '-',
-        },
-        { label: 'logDir', value: logs.dir || '-' },
-        { label: 'logFileCount', value: String(logs.fileCount ?? '-') },
-        { label: 'logSize', value: formatBytes(logs.totalSize) },
       ],
     },
   ]
@@ -644,107 +586,4 @@ watch(autoRefresh, (enabled) => {
 })
 </script>
 
-<style lang="scss" scoped>
-.system-ops-about {
-  padding: 4px 0;
-
-  .system-ops-about__switch-label {
-    font-size: calc(13px * var(--app-font-scale, 1));
-    color: var(--td-text-color-secondary);
-  }
-
-  .system-ops-about__metrics {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    margin-bottom: 12px;
-  }
-
-  .system-ops-about__metric {
-    flex: 1 1 180px;
-    min-width: 160px;
-
-    :deep(.t-card__body) {
-      padding: 16px;
-    }
-  }
-
-  .system-ops-about__metric-name {
-    font-size: calc(13px * var(--app-font-scale, 1));
-    color: var(--td-text-color-secondary);
-  }
-
-  .system-ops-about__metric-value {
-    margin: 8px 0 6px;
-    font-size: calc(26px * var(--app-font-scale, 1));
-    font-weight: 600;
-    line-height: 1.2;
-    color: var(--td-brand-color);
-  }
-
-  .system-ops-about__metric-extra {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 6px;
-    min-height: 22px;
-  }
-
-  .system-ops-about__metric-tip {
-    font-size: calc(12px * var(--app-font-scale, 1));
-    color: var(--td-text-color-placeholder);
-    word-break: break-all;
-  }
-
-  .system-ops-about__card {
-    margin-bottom: 12px;
-  }
-
-  .system-ops-about__chart-tip {
-    margin-bottom: 4px;
-    font-size: calc(12px * var(--app-font-scale, 1));
-    color: var(--td-text-color-placeholder);
-  }
-
-  .system-ops-about__chart {
-    width: 100%;
-    height: 320px;
-  }
-
-  .system-ops-about__chart--small {
-    height: 240px;
-  }
-
-  .system-ops-about__distributions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-
-    .system-ops-about__card--half {
-      flex: 1 1 320px;
-      min-width: 280px;
-    }
-  }
-
-  .system-ops-about__empty {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 240px;
-    font-size: calc(13px * var(--app-font-scale, 1));
-    color: var(--td-text-color-placeholder);
-  }
-
-  .system-ops-about__footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: calc(12px * var(--app-font-scale, 1));
-    color: var(--td-text-color-secondary);
-  }
-
-  .system-ops-about__footer-time {
-    color: var(--td-text-color-placeholder);
-  }
-}
-</style>
+<style lang="scss" scoped>@import url("./index.scss");</style>

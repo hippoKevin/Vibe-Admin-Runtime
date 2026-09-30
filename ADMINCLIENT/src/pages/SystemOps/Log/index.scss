@@ -1,0 +1,132 @@
+/* ===== 由 index.vue 提取 ===== */
+
+/* 页面铺满内容区：与用户管理页保持一致 */
+.container {
+  height: calc(100vh - 110px);
+  display: flex;
+  flex-direction: column;
+
+  /* 卡片主体占满剩余空间，内部再按 flex 分配 */
+  :deep(.t-card__body) {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+}
+
+.system-ops-log__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 10px 0;
+}
+
+/* 表格外层容器：铺满可用高度，供 maxHeight 动态测量 */
+.system-ops-log__table {
+  flex: 1;
+  min-height: 0;
+}
+
+.system-ops-log__field {
+  width: 140px;
+
+  &--keyword {
+    width: 200px;
+  }
+
+  &--action {
+    width: 170px;
+  }
+
+  &--result {
+    width: 130px;
+  }
+
+  &--file {
+    width: 240px;
+  }
+}
+
+.system-ops-log__switch-label {
+  font-size: calc(13px * var(--app-font-scale, 1));
+  color: var(--td-text-color-secondary);
+}
+
+.system-ops-log__action-name {
+  display: block;
+  overflow: hidden;
+  font-size: calc(13px * var(--app-font-scale, 1));
+  color: var(--td-text-color-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.system-ops-log__summary {
+  display: block;
+  overflow: hidden;
+  font-size: calc(13px * var(--app-font-scale, 1));
+  color: var(--td-text-color-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.system-ops-log__muted {
+  color: var(--td-text-color-placeholder);
+}
+
+.system-ops-log__result-message {
+  display: inline-block;
+  max-width: 8em;
+  overflow: hidden;
+  font-size: calc(12px * var(--app-font-scale, 1));
+  color: var(--td-text-color-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.system-ops-log__drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.system-ops-log__drawer-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.system-ops-log__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: calc(12px * var(--app-font-scale, 1));
+  color: var(--td-text-color-secondary);
+}
+
+.system-ops-log__meta-file {
+  margin-left: auto;
+  color: var(--td-text-color-placeholder);
+}
+
+.system-ops-log__log {
+  height: calc(100vh - 330px);
+  min-height: 240px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: var(--td-radius-default);
+  background: var(--td-bg-color-container);
+  color: var(--td-text-color-primary);
+  font-family: Consolas, Monaco, 'Courier New', monospace;
+  font-size: calc(12px * var(--app-font-scale, 1));
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

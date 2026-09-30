@@ -1,0 +1,125 @@
+/* ===== 由 index.vue 提取 ===== */
+
+/* 页面铺满内容区：与用户管理页保持一致 */
+.container {
+  height: calc(100vh - 110px);
+  display: flex;
+  flex-direction: column;
+
+  /* 卡片主体占满剩余空间，内部再按 flex 分配 */
+  :deep(.t-card__body) {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+}
+
+.system-ops-env__field {
+  width: 260px;
+}
+
+.system-ops-env__switch-label {
+  font-size: calc(13px * var(--app-font-scale, 1));
+  color: var(--td-text-color-secondary);
+}
+
+.system-ops-env {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 10px 0;
+
+  .system-ops-env__tip {
+    margin-bottom: 8px;
+  }
+
+  .system-ops-env__hint {
+    margin-bottom: 12px;
+    font-size: calc(12px * var(--app-font-scale, 1));
+    color: var(--td-text-color-placeholder);
+  }
+
+  /* 加载层包裹容器：让配置项面板吃满剩余高度 */
+  :deep(.t-loading__parent) {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .system-ops-env__panel {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    border: 1px solid var(--td-component-stroke);
+    border-radius: var(--td-radius-default);
+  }
+
+  .system-ops-env__head,
+  .system-ops-env__row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+  }
+
+  .system-ops-env__head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--td-bg-color-secondarycontainer);
+    font-size: calc(13px * var(--app-font-scale, 1));
+    color: var(--td-text-color-secondary);
+  }
+
+  .system-ops-env__row {
+    border-top: 1px solid var(--td-component-stroke);
+
+    &:hover {
+      background: var(--td-bg-color-container-hover);
+    }
+  }
+
+  .system-ops-env__col-key {
+    width: 260px;
+    flex-shrink: 0;
+  }
+
+  .system-ops-env__col-value {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .system-ops-env__col-action {
+    width: 72px;
+    flex-shrink: 0;
+    text-align: right;
+  }
+
+  .system-ops-env__name {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: calc(13px * var(--app-font-scale, 1));
+    color: var(--td-text-color-primary);
+    word-break: break-all;
+  }
+
+  .system-ops-env__empty {
+    padding: 24px;
+    text-align: center;
+    font-size: calc(13px * var(--app-font-scale, 1));
+    color: var(--td-text-color-placeholder);
+  }
+}
+
+.system-ops-env__footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+  font-size: calc(12px * var(--app-font-scale, 1));
+  color: var(--td-text-color-secondary);
+}
