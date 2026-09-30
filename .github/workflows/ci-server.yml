@@ -1,0 +1,55 @@
+name: CI · Server
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'ADMINSERVER/**'
+      - 'QuickStart/**'
+      - '.github/workflows/ci-server.yml'
+  pull_request:
+    paths:
+      - 'ADMINSERVER/**'
+      - '.github/workflows/ci-server.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-server-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: 安装 · 构建 · 测试
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ADMINSERVER
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: 配置 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: ADMINSERVER/pnpm-lock.yaml
+
+      # 具体步骤都在后端 CI/CD 目录里，本地与 CI 行为一致
+      - name: 安装依赖 · 构建 · 单元测试
+        run: RUN_TESTS=1 bash cicd/build.sh
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-dist
+          path: ADMINSERVER/dist
+          retention-days: 7
