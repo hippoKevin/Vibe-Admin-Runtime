@@ -288,8 +288,13 @@ const dialog = DialogPlugin.confirm({
 | --- | --- | --- | --- |
 | 主题色 | `theme-color` | `--td-brand-color-1..10` | `utils/theme.ts` 生成 10 阶色板 |
 | 明暗模式 | `theme-mode` | `theme-mode` 属性 | 切换时用 `switchThemeWithCurtain` 转场 |
-| 页面亮度 | `theme-brightness` | `--app-brightness-filter` | 100% 时不设置 filter |
+| 页面亮度 | `theme-brightness` | `--app-dim-opacity` | 只支持调暗（50%~100%），用 `body::after` 黑色遮罩实现 |
 | 字号缩放 | `app-font-scale` | `--app-font-scale` | 所有字号都乘它 |
+
+⚠️ **不要用 `body { filter: brightness() }` 做亮度**：`filter` 会让 `body` 成为 `position: fixed`
+后代的包含块，挂在 `body` 上的浮层（TDesign 弹层、vue-devtools 悬浮球）会转为参与文档流并把文档撑高，
+滚到底部露出一条白块（实测 1300px 视口被撑到 1356px）。同理**不要在 `body`/`html` 上加 `filter`、`transform`、
+`perspective`、`contain: paint` 这类会生成包含块的属性**。
 
 新页面只要是文本字号，就必须使用 `var(--app-font-scale, 1)`，否则用户调字号时会出现大小不一。
 
