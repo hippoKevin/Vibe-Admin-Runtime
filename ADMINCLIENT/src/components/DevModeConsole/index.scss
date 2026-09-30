@@ -244,6 +244,108 @@
   letter-spacing: 0.06em;
 }
 
+/* ===== 通道切换：快速回复（TTS 播报）/ 后台执行（改代码） ===== */
+.dev-mode__channels {
+  display: flex;
+  align-items: center;
+  gap: calc(8px * var(--app-font-scale, 1));
+  min-width: 0;
+  /* 容器穿透，只有小控件接收点击（底部空白处照常点到系统页面） */
+  pointer-events: none;
+}
+
+.dev-mode__channels-label {
+  flex: 0 0 auto;
+  color: var(--td-text-color-secondary, #5a6880);
+  font-size: calc(10px * var(--app-font-scale, 1));
+  letter-spacing: 0.06em;
+  pointer-events: none;
+}
+
+/* 分段控件：两个小按钮，当前通道用品牌色实心块表示 */
+.dev-mode__channels-seg {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: calc(2px * var(--app-font-scale, 1));
+  padding: calc(2px * var(--app-font-scale, 1));
+  border: 1px solid var(--td-component-stroke, rgba(27, 36, 49, 0.12));
+  border-radius: calc(15px * var(--app-font-scale, 1));
+  background: var(--td-bg-color-container, rgba(255, 255, 255, 0.86));
+  pointer-events: auto;
+}
+
+.dev-mode__seg {
+  height: calc(22px * var(--app-font-scale, 1));
+  padding: 0 calc(12px * var(--app-font-scale, 1));
+  border: 0;
+  border-radius: calc(11px * var(--app-font-scale, 1));
+  background: transparent;
+  color: var(--td-text-color-secondary, #5a6880);
+  font-family: inherit;
+  font-size: calc(12px * var(--app-font-scale, 1));
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background 180ms ease, color 180ms ease;
+}
+
+.dev-mode__seg:hover {
+  color: var(--td-brand-color, #3b5bff);
+}
+
+/* 当前通道：一眼看得出来 */
+.dev-mode__seg--active {
+  background: var(--td-brand-color, #3b5bff);
+  color: #fff;
+  font-weight: 600;
+}
+
+.dev-mode__seg--active:hover {
+  background: var(--td-brand-color-hover, #2c49e0);
+  color: #fff;
+}
+
+/* 「正在播报」提示：状态点 + 一行小字，不做夸张动效 */
+.dev-mode__speaking {
+  display: flex;
+  overflow: hidden;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: calc(6px * var(--app-font-scale, 1));
+  min-width: 0;
+  color: var(--td-text-color-secondary, #5a6880);
+  font-size: calc(10px * var(--app-font-scale, 1));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.dev-mode__speaking-dot {
+  flex: 0 0 auto;
+  width: calc(7px * var(--app-font-scale, 1));
+  height: calc(7px * var(--app-font-scale, 1));
+  border-radius: 50%;
+  background: var(--td-component-stroke, rgba(27, 36, 49, 0.24));
+}
+
+.dev-mode__speaking-dot--on {
+  background: var(--td-brand-color, #3b5bff);
+  animation: dev-mode-speaking 1.1s ease-in-out infinite;
+}
+
+@keyframes dev-mode-speaking {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.45;
+    transform: scale(0.78);
+  }
+}
+
 /* ===== 底部交互区（球的正下方，也就是原来音轨的位置） ===== */
 .dev-mode__dock {
   position: relative;
@@ -299,6 +401,38 @@
 
 .dev-mode__dot--error {
   background: var(--td-error-color, #d4380d);
+}
+
+/* 快速回复通道的结果卡：答复文本不超过几行，剩下的省略 */
+.dev-mode__result--reply {
+  border-color: rgba(59, 91, 255, 0.32);
+}
+
+/* 等待后台执行结果时的结果卡：虚线边框区分「运行中」 */
+.dev-mode__result--pending {
+  border-style: dashed;
+}
+
+/* 快速回复通道的答复（最多 3 行 + 省略号，播报听完整内容） */
+.dev-mode__answer {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  margin: calc(6px * var(--app-font-scale, 1)) 0 0;
+  color: var(--td-text-color-primary, #1b2431);
+  font-size: calc(13px * var(--app-font-scale, 1));
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+/* 快速回复通道擅自改了文件的警告 */
+.dev-mode__warn {
+  margin: calc(6px * var(--app-font-scale, 1)) 0 0;
+  color: var(--td-warning-color, #d98200);
+  font-size: calc(11px * var(--app-font-scale, 1));
+  line-height: 1.5;
+  word-break: break-word;
 }
 
 .dev-mode__files {

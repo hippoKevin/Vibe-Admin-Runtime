@@ -40,15 +40,13 @@ export function translateServerText(text: string | null | undefined): string {
   // 显式读取当前 locale，使模板中的调用能响应语言切换
   void i18n.global.locale.value
   const t = i18n.global.t
-  const menuKey = `menuNames.${text}` as const
-  const columnKey = `columnTitles.${text}` as const
-  const apiKey = `apiMessage.${text}` as const
-  const menu = t(menuKey)
-  if (menu && menu !== menuKey) return menu
-  const column = t(columnKey)
-  if (column && column !== columnKey) return column
-  const api = t(apiKey)
-  if (api && api !== apiKey) return api
+  const te = i18n.global.te
+  // 服务端来的文本绝大多数没有对应翻译，先用 te 判断键是否存在，
+  // 否则 vue-i18n 会对每个未命中的键刷一条 "Not found" 告警，控制台会很吵
+  const keys = [`menuNames.${text}`, `columnTitles.${text}`, `apiMessage.${text}`]
+  for (const key of keys) {
+    if (te(key)) return t(key)
+  }
   return text
 }
 

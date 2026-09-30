@@ -9,8 +9,17 @@ import { ref } from 'vue'
  * 真正的任务状态在后端进程里（running + 最近 20 次历史），刷新只影响前端表现。
  */
 
+/** 开发模式的两个通道：reply = 快速回复（TTS 播报），code = 后台执行改代码 */
+export type DevModeChannel = 'reply' | 'code'
+
 /** 开发模式是否打开 */
 export const DEV_MODE_OPEN_KEY = 'dev-mode-open'
+
+/** 当前通道（快速回复 / 后台执行） */
+export const DEV_MODE_CHANNEL_KEY = 'dev-mode-channel'
+
+/** 是否语音播报（快速回复通道的答复用 TTS 念出来） */
+export const DEV_MODE_SPEAK_KEY = 'dev-mode-speak'
 
 /** 输入框草稿（刷新后不丢输入） */
 export const DEV_MODE_DRAFT_KEY = 'dev-mode-draft'
@@ -37,6 +46,9 @@ export const PANEL_ALPHA_DEFAULT = 86
  * 历史上这里是 72% + blur(4px)，等于把系统糊掉了，所以默认值降到 18%。
  */
 export const VEIL_ALPHA_DEFAULT = 18
+
+/** 开发模式默认通道：快速回复（说一句 → 听回答） */
+export const DEV_MODE_CHANNEL_DEFAULT: DevModeChannel = 'reply'
 
 /** 音轨位置默认值（相对舞台底部的像素偏移） */
 export const DOCK_OFFSET_DEFAULT = 0
@@ -90,6 +102,12 @@ function writeNumber(key: string, value: number) {
   writeString(key, String(value))
 }
 
+/** 读音道（非法值一律回落到默认的「快速回复」） */
+function readChannel(key: string, fallback: DevModeChannel): DevModeChannel {
+  const value = readString(key, fallback)
+  return value === 'code' || value === 'reply' ? value : fallback
+}
+
 /** 开发模式是否打开：应用启动时若上次是打开的，直接恢复 */
 export const devModeOpen = ref<boolean>(readBoolean(DEV_MODE_OPEN_KEY, false))
 
@@ -113,6 +131,12 @@ export const devModeVeilAlpha = ref<number>(
 export const devModeDockOffset = ref<number>(
   readNumber(DEV_MODE_DOCK_KEY, DOCK_OFFSET_DEFAULT, DOCK_OFFSET_MIN, DOCK_OFFSET_MAX),
 )
+
+/** 当前通道：reply = 快速回复（TTS 播报）/ code = 后台执行 */
+export const devModeChannel = ref<DevModeChannel>(readChannel(DEV_MODE_CHANNEL_KEY, DEV_MODE_CHANNEL_DEFAULT))
+
+/** 是否语音播报（快速回复通道的答复用 TTS 念出来） */
+export const devModeSpeak = ref<boolean>(readBoolean(DEV_MODE_SPEAK_KEY, true))
 
 /** 打开开发模式（持久化，刷新后自动恢复） */
 export function openDevMode() {
@@ -170,4 +194,17 @@ export function saveDevModeDockOffset(value: number) {
   const next = Math.min(DOCK_OFFSET_MAX, Math.max(DOCK_OFFSET_MIN, Math.round(Number(value) || 0)))
   devModeDockOffset.value = next
   writeNumber(DEV_MODE_DOCK_KEY, next)
+}
+
+/** 保存当前通道（刷新后保持） */
+export function saveDevModeChannel(value: DevModeChannel) {
+  const next: DevModeChannel = value === 'code' ? 'code' : 'reply'
+  devModeChannel.value = next
+  writeString(DEV_MODE_CHANNEL_KEY, next)
+}
+
+/** 保存是否语音播报 */
+export function saveDevModeSpeak(value: boolean) {
+  devModeSpeak.value = value
+  writeBoolean(DEV_MODE_SPEAK_KEY, value)
 }

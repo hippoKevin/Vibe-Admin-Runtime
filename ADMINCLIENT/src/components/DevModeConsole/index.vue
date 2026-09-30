@@ -59,12 +59,53 @@
           @pointerdown="handleDockDragStart"
         />
 
+        <!-- 通道切换：快速回复（TTS 播报）/ 后台执行（改代码），选择持久化 -->
+        <div class="dev-mode__channels" data-testid="dev-console-channels">
+          <span class="dev-mode__channels-label">{{ $t('devMode.channelLabel') }}</span>
+          <div class="dev-mode__channels-seg" role="group">
+            <button
+              type="button"
+              class="dev-mode__seg"
+              :class="{ 'dev-mode__seg--active': channel === 'reply' }"
+              data-testid="dev-console-channel-reply"
+              :aria-pressed="channel === 'reply' ? 'true' : 'false'"
+              :title="$t('devMode.channelReplyTip')"
+              @click="switchChannel('reply')"
+            >{{ $t('devMode.channelReply') }}</button>
+            <button
+              type="button"
+              class="dev-mode__seg"
+              :class="{ 'dev-mode__seg--active': channel === 'code' }"
+              data-testid="dev-console-channel-code"
+              :aria-pressed="channel === 'code' ? 'true' : 'false'"
+              :title="$t('devMode.channelCodeTip')"
+              @click="switchChannel('code')"
+            >{{ $t('devMode.channelCode') }}</button>
+          </div>
+          <span v-if="channel === 'reply'" class="dev-mode__speaking" data-testid="dev-console-speaking">
+            <span class="dev-mode__speaking-dot" :class="{ 'dev-mode__speaking-dot--on': speaking }" />
+            <span>{{ speaking ? $t('devMode.speaking') : (speechMuted ? $t('devMode.speakOff') : $t('devMode.speakOn')) }}</span>
+          </span>
+        </div>
+
         <!-- 本次执行结果 -->
-        <section v-if="resultVisible" class="dev-mode__result" data-testid="dev-console-result">
+        <section
+          v-if="resultVisible"
+          class="dev-mode__result"
+          :class="{
+            'dev-mode__result--reply': resultChannel === 'reply',
+            'dev-mode__result--error': resultIsError,
+            'dev-mode__result--pending': backgroundRunning,
+          }"
+          data-testid="dev-console-result"
+        >
           <div class="dev-mode__result-head">
             <span class="dev-mode__dot" :class="{ 'dev-mode__dot--error': resultIsError }" />
             <span>{{ resultHeadline }}</span>
           </div>
+          <p v-if="resultChannel === 'reply' && resultAnswer" class="dev-mode__answer" data-testid="dev-console-answer">
+            {{ resultAnswer }}
+          </p>
           <ul v-if="resultFiles.length" class="dev-mode__files">
             <li v-for="(file, index) in resultFiles" :key="`${file.path}-${index}`" class="dev-mode__file">
               <span class="dev-mode__tag" :class="`dev-mode__tag--${statusInfo(file.status).key}`">
@@ -73,7 +114,14 @@
               <span class="dev-mode__path">{{ file.path }}</span>
             </li>
           </ul>
-          <p v-else-if="!resultIsError" class="dev-mode__muted">{{ $t('devMode.resultFilesEmpty') }}</p>
+          <p
+            v-if="resultFiles.length && resultChannel === 'reply'"
+            class="dev-mode__warn"
+            data-testid="dev-console-reply-warn"
+          >{{ $t('devMode.replyFilesWarn', { count: resultFiles.length }) }}</p>
+          <p v-else-if="!resultIsError && !resultFiles.length" class="dev-mode__muted">
+            {{ resultChannel === 'reply' ? $t('devMode.replyNoFileHint') : $t('devMode.resultFilesEmpty') }}
+          </p>
         </section>
 
         <!-- 输入框上方的「Agent 执行过程」开关 -->
@@ -113,6 +161,17 @@
             :title="mode === 'voice' ? $t('devMode.modeToText') : $t('devMode.modeToVoice')"
             @click="handleToggleMode"
           >{{ mode === 'voice' ? '⌨' : '🎙' }}</button>
+
+          <button
+            v-if="channel === 'reply'"
+            type="button"
+            class="dev-mode__btn dev-mode__btn--icon"
+            :class="{ 'dev-mode__btn--on': !speechMuted }"
+            data-testid="dev-console-mute"
+            :aria-pressed="speechMuted ? 'false' : 'true'"
+            :title="speechMuted ? $t('devMode.muteOn') : $t('devMode.muteOff')"
+            @click="handleToggleMute"
+          >{{ speechMuted ? '🔇' : '🔊' }}</button>
 
           <button
             type="button"
@@ -265,6 +324,8 @@ import router from '@/router'
 import { useUserStore } from '@/stores/userStore'
 import {
   type DevAgentChangedFile,
+  type DevAgentCodeAccepted,
+  type DevAgentReplyResult,
   type DevAgentRunRecord,
   type DevAgentRunResult,
   getDevAgentRuns,
@@ -272,19 +333,25 @@ import {
   generateByDevAgent,
 } from '@/api/devAgent'
 import {
+  type DevModeChannel,
   closeDevMode,
+  devModeChannel,
   devModeDockOffset,
   devModeDraft,
   devModePanelAlpha,
   devModePanelOpen,
+  devModeSpeak,
   devModeVeilAlpha,
+  saveDevModeChannel,
   saveDevModeDockOffset,
   saveDevModeDraft,
   saveDevModePanelAlpha,
   saveDevModePanelOpen,
+  saveDevModeSpeak,
   saveDevModeVeilAlpha,
 } from '@/utils/devMode'
 import { SphereMesh, drawWave, readLevel } from './controller/mesh'
+import { SpeechController } from './controller/speech'
 import { VoiceInput } from './controller/voice'
 
 /**
@@ -302,10 +369,19 @@ import { VoiceInput } from './controller/voice'
  *      若后端还有任务在跑就直接进入执行态并轮询到结束（Agent 不会被打断）。
  */
 
-/** 重连轮询间隔（毫秒） */
-const RECONNECT_POLL_INTERVAL = 2500
-/** 等待后端任务结束的上限（毫秒） */
-const RECONNECT_MAX_WAIT = 30 * 60 * 1000
+/**
+ * 本次提交的任务最多等多久（毫秒）
+ *
+ * 「后台执行」通道提交后只轮询 5 分钟：这是交互上限，不是后端上限 ——
+ * 超时就停止轮询并提示去「Agent 执行过程」面板看，避免无限转圈。
+ */
+const RUN_POLL_MAX_WAIT = 5 * 60 * 1000
+/** 本次任务的轮询间隔（毫秒） */
+const RUN_POLL_INTERVAL = 2500
+/** 语音识别结束后自动发送的延迟（毫秒）：给识别结果落到输入框留一帧 */
+const AUTO_SEND_DELAY = 320
+/** 刷新后接管「后端还在跑的任务」时允许的最长等待（毫秒），Agent 不会被打断 */
+const ADOPT_MAX_WAIT = 30 * 60 * 1000
 /** 草稿落盘的防抖时间（毫秒） */
 const DRAFT_SAVE_DELAY = 300
 /** Agent 自身目录下的改动不参与页面跳转（归一化后的小写前缀） */
@@ -322,7 +398,7 @@ interface MenuPage {
   address: string
 }
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const userStore = useUserStore()
 
 const meshRef = useTemplateRef<HTMLCanvasElement>('meshRef')
@@ -366,25 +442,45 @@ const runs = ref<DevAgentRunRecord[]>([])
 const selectedRunId = ref<string | number | null>(null)
 /** 结果卡片是否展示 */
 const resultVisible = ref(false)
+/** 当前通道：reply = 快速回复（TTS 播报）/ code = 后台执行 */
+const channel = ref<DevModeChannel>(devModeChannel.value)
+/** 是否语音播报（持久化） */
+const speechMuted = ref<boolean>(!devModeSpeak.value)
+/** 结果卡里展示的答复：快速回复通道的回答本来就不落历史，单独存一份 */
+const resultAnswer = ref('')
+/** 产生当前结果的通道（决定结果卡是「答复卡」还是「改动卡」） */
+const resultChannel = ref<DevModeChannel>('reply')
+/** 是否正在播报（界面上的轻微提示 + 球体轻微律动） */
+const speaking = ref(false)
+/** 是否已转入后台执行（「后台执行」通道提交后立刻为 true，不阻塞界面） */
+const backgroundRunning = ref(false)
 
 /** 球体画布控制器 */
 let mesh: SphereMesh | null = null
 /** 麦克风/语音识别控制器 */
 let voice: VoiceInput | null = null
+/** 语音播报（TTS）控制器 */
+let speech: SpeechController | null = null
 /** 帧循环句柄 */
 let rafId = 0
-/** 重连轮询定时器 */
+/** 轮询定时器 */
 let pollTimer = 0
 /** 轮询到任务结束后的回调 */
 let pollComplete: (() => void) | null = null
 /** 开始等待后端任务的时间 */
 let waitingSince = 0
+/** 本次等待的上限（毫秒）：后台执行 5 分钟，接管刷新前的任务 30 分钟 */
+let pollMaxWait = RUN_POLL_MAX_WAIT
+/** 语音识别结果自动发送的定时器 */
+let autoSendTimer = 0
 /** 草稿落盘定时器 */
 let draftTimer = 0
 /** 是否已经挂载（避免卸载后 rAF / 定时器又跑起来） */
 let mounted = false
 
-const canSend = computed(() => ready.value && !generating.value && !!draft.value.trim())
+const canSend = computed(
+  () => ready.value && !generating.value && !backgroundRunning.value && !!draft.value.trim(),
+)
 
 /** 音轨/输入区的位置偏移（拖动把手调整，持久化） */
 const dockTransform = computed(() => `translateY(${dockOffset.value}px)`)
@@ -405,6 +501,15 @@ const resultHeadline = computed(() => {
     return t('devMode.resultError', { reason: (record as any)?.error || t('devMode.requestFailed') })
   }
   if (!record) return t('devMode.resultTitle')
+
+  // 快速回复通道没有「退出码」的概念，只报通道 + 耗时
+  if (resultChannel.value === 'reply') {
+    return `${t('devMode.channelReply')} · ${t('devMode.resultBriefMeta', {
+      duration: formatDuration(record.duration),
+      time: formatClock(record.finishedAt),
+    })}`
+  }
+
   const head = record.ok ? t('devMode.resultDone') : t('devMode.resultEnded')
   return `${head} · ${t('devMode.resultMeta', {
     duration: formatDuration(record.duration),
@@ -481,11 +586,25 @@ function setStatus(text: string, isError = false) {
   statusError.value = isError
 }
 
-/** 渲染一次结果（isError 只用于本地请求失败，后端那次失败仍按它的 ok 展示） */
-function renderResult(record: DevAgentRunRecord | DevAgentRunResult | null, isError = false) {
+/**
+ * 渲染一次结果（isError 只用于本地请求失败，后端那次失败仍按它的 ok 展示）
+ *
+ * @param record    后端返回的结果 / 历史记录
+ * @param isError   是否是本地请求失败
+ * @param owner     产生这条结果的通道（缺省沿用上一次的通道）
+ * @param answer    快速回复通道的答复原文（历史记录里存在 output 里）
+ */
+function renderResult(
+  record: DevAgentRunRecord | DevAgentRunResult | null,
+  isError = false,
+  owner?: DevModeChannel,
+  answer = '',
+) {
   lastResult.value = record
   resultIsError.value = isError
   resultVisible.value = !!record
+  if (owner) resultChannel.value = owner
+  resultAnswer.value = answer || ''
 }
 
 /** 关闭开发模式（只改状态开关，App.vue 会卸载本组件） */
@@ -666,12 +785,12 @@ function jumpToChangedPage(files: DevAgentChangedFile[]) {
  * 任务执行 + 刷新后自动接回
  */
 
+/** 停止轮询（卸载、任务结束、重新提交都会调用） */
 function stopPolling() {
   if (pollTimer) {
     window.clearTimeout(pollTimer)
     pollTimer = 0
   }
-  pollComplete = null
 }
 
 function enterBusy(hintKey: string) {
@@ -682,6 +801,15 @@ function enterBusy(hintKey: string) {
 
 function stopBusy() {
   generating.value = false
+  backgroundRunning.value = false
+}
+
+/** 后台执行通道：立刻受理，只留提示，不阻塞提交动作 */
+function enterBackground(hintKey: string) {
+  generating.value = true
+  backgroundRunning.value = true
+  resultVisible.value = false
+  setHint(t(hintKey))
 }
 
 function applyRunsData(data: { items?: DevAgentRunRecord[] } | null | undefined) {
@@ -700,10 +828,38 @@ function refreshRuns(): Promise<void> {
     })
 }
 
-/** 轮询 /runs 直到该次任务结束，然后展示结果、改动文件并跳转 */
-function pollUntilDone(runId: string | number | null) {
+/** 从最近一次 /runs 结果里找出这次提交的那条记录 */
+function localRecordOf(runId: string | number | null): DevAgentRunRecord | null {
+  if (runId != null) {
+    for (const item of runs.value) {
+      if (String(item.id) === String(runId)) return item
+    }
+  }
+  return runs.value[0] ?? null
+}
+
+/** 这条记录是否还在跑（/runs 里该条 running 已翻成 false 就算完成） */
+function isRecordRunning(record: DevAgentRunRecord | null): boolean {
+  return !!record && record.running !== false
+}
+
+/** 一条 record 是简短回复通道的答复记录（答复存在 output 里） */
+function recordChannel(record: DevAgentRunRecord | null): DevModeChannel | null {
+  if (!record) return null
+  if (record.channel === 'reply' || record.channel === 'code') return record.channel
+  return null
+}
+
+/**
+ * 轮询 /runs 直到这次任务结束，然后展示结果、改动文件并跳转
+ *
+ * @param runId   这次提交的 runId（null = 只等「后端不再有任务在跑」）
+ * @param adopted 是否是刷新后接管的任务（接管用 30 分钟上限，本次提交用 5 分钟）
+ */
+function pollUntilRunDone(runId: string | number | null, adopted = false) {
   stopPolling()
   waitingSince = Date.now()
+  pollMaxWait = adopted ? ADOPT_MAX_WAIT : RUN_POLL_MAX_WAIT
 
   const poll = () => {
     pollTimer = 0
@@ -713,49 +869,60 @@ function pollUntilDone(runId: string | number | null) {
       .then((data) => {
         applyRunsData(data)
 
-        if (data?.running && Date.now() - waitingSince < RECONNECT_MAX_WAIT) {
-          pollTimer = window.setTimeout(poll, RECONNECT_POLL_INTERVAL)
+        const current = localRecordOf(runId)
+        const pending = isRecordRunning(current) || (adopted && !!data?.running)
+        if (pending) {
+          if (Date.now() - waitingSince >= pollMaxWait) {
+            // 本次提交超过上限：停止轮询并提示去面板看，避免无限转圈
+            stopBusy()
+            setHint(t('devMode.backgroundTimeout'), true)
+            const timeoutCallback = pollComplete
+            pollComplete = null
+            if (timeoutCallback) timeoutCallback()
+            return
+          }
+          pollTimer = window.setTimeout(poll, RUN_POLL_INTERVAL)
           return
         }
 
-        let current: DevAgentRunRecord | null = null
-        for (const item of runs.value) {
-          if (String(item.id) === String(runId)) {
-            current = item
-            break
-          }
-        }
-        if (!current && runs.value.length) current = runs.value[0] ?? null
-
+        const finished = current
         stopBusy()
-        if (current) {
-          lastResult.value = current
-          selectedRunId.value = current.id
-          renderResult(current, false)
-          setHint(
-            current.ok
-              ? t('devMode.doneHintLocal')
-              : t('devMode.doneFailed', { reason: current.error || t('devMode.exitCodeLabel', { code: current.exitCode }) }),
+        if (finished) {
+          const channelOfRun = recordChannel(finished)
+          lastResult.value = finished
+          selectedRunId.value = finished.id
+          renderResult(
+            finished,
+            false,
+            channelOfRun || undefined,
+            channelOfRun === 'reply' ? finished.output || '' : '',
           )
-          jumpToChangedPage(current.files || [])
+          setHint(
+            finished.ok
+              ? t(adopted ? 'devMode.doneHintLocal' : 'devMode.backgroundDoneHint')
+              : t('devMode.doneFailed', {
+                  reason: finished.error || t('devMode.exitCodeLabel', { code: finished.exitCode }),
+                }),
+          )
+          if (channelOfRun !== 'reply') jumpToChangedPage(finished.files || [])
         } else {
           setHint(t('devMode.taskEnded'))
         }
 
         const callback = pollComplete
-        stopPolling()
+        pollComplete = null
         if (callback) callback()
       })
       .catch(() => {
-        // 网络抖动继续重试，不打断重连
-        pollTimer = window.setTimeout(poll, RECONNECT_POLL_INTERVAL)
+        // 网络抖动继续重试，不打断轮询
+        pollTimer = window.setTimeout(poll, RUN_POLL_INTERVAL)
       })
   }
 
   poll()
 }
 
-/** 接管「后端还在跑」的任务：进入执行态并轮询到它结束 */
+/** 接管「后端还在跑」的任务：进入执行态并轮询到它结束（Agent 不会被打断） */
 function adoptRunning(record: DevAgentRunRecord | DevAgentRunResult | null) {
   if (generating.value) return
 
@@ -772,7 +939,7 @@ function adoptRunning(record: DevAgentRunRecord | DevAgentRunResult | null) {
     refreshRuns()
   }
 
-  pollUntilDone(runRecord?.id ?? null)
+  pollUntilRunDone(runRecord?.id ?? null, true)
 }
 
 /** 挂载/刷新时恢复上下文：还在跑就接回执行态，否则展示最近一次结果 */
@@ -804,9 +971,10 @@ function syncComposer(statusData: { running?: boolean; lastRun?: DevAgentRunResu
       if (runs.value.length) {
         const latest = runs.value[0] ?? null
         if (!latest) return
+        const channelOfRun = recordChannel(latest)
         lastResult.value = latest
         selectedRunId.value = latest.id
-        renderResult(latest, false)
+        renderResult(latest, false, channelOfRun || undefined, channelOfRun === 'reply' ? latest.output || '' : '')
         setHint(t('devMode.historyRestored'))
       }
     })
@@ -850,6 +1018,51 @@ function handleInputKeydown(event: KeyboardEvent) {
   handleGenerate()
 }
 
+/**
+ * Channel Setting
+ * 通道切换（快速回复 / 后台执行），选择持久化
+ */
+
+/** 切换通道：切走时掐掉正在念的语音，避免跨通道叠着播报 */
+function switchChannel(next: DevModeChannel) {
+  if (next === channel.value) return
+  if (next === 'code') {
+    speech?.cancel()
+    cancelAutoSend()
+  }
+  channel.value = next
+  saveDevModeChannel(next)
+  setHint(t(next === 'reply' ? 'devMode.readyHint' : 'devMode.channelCodeTip'))
+}
+
+/**
+ * Speech Setting
+ * 语音播报（TTS）
+ *
+ * 浏览器不支持 speechSynthesis 时静默降级：只走结果卡里的文字，不报错。
+ */
+
+/** 静音开关：关掉时立刻停止正在念的内容，并且之后不再调用 speak */
+function handleToggleMute() {
+  speechMuted.value = !speechMuted.value
+  saveDevModeSpeak(!speechMuted.value)
+  if (speechMuted.value) speech?.cancel()
+  setHint(t(speechMuted.value ? 'devMode.speakOff' : 'devMode.speakOn'))
+}
+
+/** 念一句（静音、浏览器不支持、组件已卸载都自动跳过，只在结果卡显示文字） */
+function speakAnswer(answer: string) {
+  const content = String(answer || '').trim()
+  if (!content || !mounted) return
+  if (!speech?.supported) return
+  speech.speak(content)
+}
+
+/**
+ * Voice Setting
+ * 语音识别 → 自动发送 → 自动播报（只在快速回复通道）
+ */
+
 /** 语音识别的确定结果「追加」到输入框 */
 function appendRecognized(text: string) {
   const value = String(text || '').trim()
@@ -861,6 +1074,32 @@ function appendRecognized(text: string) {
   interim.value = ''
   speechNote.value = ''
   saveDraftNow()
+  scheduleAutoSend()
+}
+
+/** 快速回复通道下的「说一句 → 听回答」闭环：识别完就自动发送 */
+function shouldAutoSendByVoice(): boolean {
+  return channel.value === 'reply' && !!ready.value && !generating.value && !backgroundRunning.value
+}
+
+/** 等识别结果落到输入框后再自动发送（文字输入不触发） */
+function scheduleAutoSend() {
+  cancelAutoSend()
+  if (!shouldAutoSendByVoice()) return
+  autoSendTimer = window.setTimeout(() => {
+    autoSendTimer = 0
+    if (!mounted || !shouldAutoSendByVoice()) return
+    if (!draft.value.trim()) return
+    handleGenerate()
+  }, AUTO_SEND_DELAY)
+}
+
+/** 放弃待执行的自动发送（切通道、退出语音模式、卸载） */
+function cancelAutoSend() {
+  if (autoSendTimer) {
+    window.clearTimeout(autoSendTimer)
+    autoSendTimer = 0
+  }
 }
 
 /** 切到文字模式后把焦点放回输入框 */
@@ -886,6 +1125,7 @@ function exitVoiceMode(hintKey?: string) {
   mode.value = 'text'
   interim.value = ''
   speechNote.value = ''
+  cancelAutoSend()
   voice?.stop()
   if (hintKey) setHint(t(hintKey))
 }
@@ -921,9 +1161,19 @@ watch(draft, () => {
   }, DRAFT_SAVE_DELAY)
 })
 
-/** 提交任务：调 /generate（同步阻塞，可能跑几分钟），完成后展示结果并跳转 */
+/** 语言切换后播报语言跟着切（zh-CN / en-US） */
+watch(locale, (value) => {
+  speech?.setLang(String(value || 'zh-CN'))
+})
+
+/**
+ * 提交任务
+ *
+ * - 快速回复：同步等答复 → 结果卡显示一两句 → TTS 念出来（不改代码、不跳页面）
+ * - 后台执行：立刻受理 → 只提示「已转入后台执行」→ 轮询 /runs 到 running 翻成 false
+ */
 async function handleGenerate() {
-  if (generating.value) return
+  if (generating.value || backgroundRunning.value) return
 
   const prompt = draft.value.trim()
   if (!prompt) {
@@ -935,29 +1185,48 @@ async function handleGenerate() {
     return
   }
 
+  // 再次发送前掐掉上一段播报与待执行的自动发送，避免叠着念 / 重复提交
+  cancelAutoSend()
+  speech?.cancel()
+
   // 提交时收回麦克风：避免把环境音当成新的需求
   if (mode.value === 'voice') {
     voice?.suspend()
     interim.value = ''
   }
 
+  if (channel.value === 'reply') await runReply(prompt)
+  else await runBackground(prompt)
+
+  refreshRuns()
+}
+
+/** 快速回复通道：同步拿答复 → 展示 + 播报 */
+async function runReply(prompt: string) {
   enterBusy('devMode.runningHint')
 
   try {
-    const record = await generateByDevAgent(prompt)
-    lastResult.value = record
-    selectedRunId.value = (record as DevAgentRunRecord).id ?? null
-    renderResult(record, false)
-    setHint(
-      record.ok
-        ? t('devMode.doneHintLocal')
-        : t('devMode.doneFailed', { reason: record.error || t('devMode.exitCodeLabel', { code: record.exitCode }) }),
-    )
+    const accepted = (await generateByDevAgent(prompt, 'reply')) as DevAgentReplyResult
+    const answer = String(accepted?.answer || '')
+    const record: DevAgentRunResult = {
+      ok: !!accepted?.ok,
+      exitCode: accepted?.exitCode ?? null,
+      duration: Number(accepted?.duration) || 0,
+      output: answer,
+      reasoningTail: '',
+      files: Array.isArray(accepted?.files) ? accepted.files : [],
+      finishedAt: accepted?.finishedAt || new Date().toISOString(),
+      answer,
+    }
+    selectedRunId.value = null
+    renderResult(record, false, 'reply', answer)
+    // 答复在结果卡里最多显示几行，播报才是完整内容
+    speakAnswer(answer)
+    setHint(record.ok ? t('devMode.speakOn') : t('devMode.backgroundDoneHint'))
     if (record.ok) {
       draft.value = ''
       saveDraftNow()
     }
-    jumpToChangedPage(record.files || [])
   } catch (error: any) {
     // 超时/网络抖动时后端可能还在跑：先接回执行态，而不是直接报失败
     try {
@@ -972,20 +1241,63 @@ async function handleGenerate() {
     }
 
     const message = error?.message || t('devMode.requestFailed')
-    lastResult.value = {
-      ok: false,
-      exitCode: null,
-      duration: 0,
-      output: '',
-      reasoningTail: '',
-      files: [],
-      finishedAt: new Date().toISOString(),
-      error: message,
-    }
-    renderResult(lastResult.value, true)
+    renderResult(
+      {
+        ok: false,
+        exitCode: null,
+        duration: 0,
+        output: '',
+        reasoningTail: '',
+        files: [],
+        finishedAt: new Date().toISOString(),
+        error: message,
+      },
+      true,
+      'reply',
+    )
     setHint(t('devMode.generateFailed'), true)
   } finally {
     if (generating.value && !pollTimer) stopBusy()
+  }
+}
+
+/** 后台执行通道：立刻表示已受理，然后轮询到结束 */
+async function runBackground(prompt: string) {
+  try {
+    const accepted = (await generateByDevAgent(prompt, 'code')) as DevAgentCodeAccepted
+
+    // 立刻表示「已转入后台执行」：绝不在界面上等它跑完
+    enterBackground('devMode.backgroundAccepted')
+    selectedRunId.value = accepted?.runId ?? null
+    pollComplete = () => {
+      stopBusy()
+      refreshRuns()
+    }
+    pollUntilRunDone(accepted?.runId ?? null)
+
+    draft.value = ''
+    saveDraftNow()
+  } catch (error: any) {
+    stopBusy()
+    const message = error?.message || t('devMode.requestFailed')
+    renderResult(
+      {
+        ok: false,
+        exitCode: null,
+        duration: 0,
+        output: '',
+        reasoningTail: '',
+        files: [],
+        finishedAt: new Date().toISOString(),
+        error: message,
+      },
+      true,
+      'code',
+    )
+    setHint(t('devMode.generateFailed'), true)
+  } finally {
+    // 这里刻意不再兜底 stopBusy()：后台通道提交成功后要一直保持执行态，
+    // 直到轮询发现 running 翻成 false（否则「已转入后台执行」会被立刻复位）。
     refreshRuns()
   }
 }
@@ -1001,7 +1313,9 @@ function tick() {
 
   rafId = window.requestAnimationFrame(tick)
   const now = performance.now()
-  const level = readLevel(voice?.node ?? null, voice?.data ?? null)
+  let level = readLevel(voice?.node ?? null, voice?.data ?? null)
+  // 播报时给球体一点轻微律动（很收敛，不做夸张效果）
+  if (speaking.value) level = Math.max(level, 0.22 + 0.1 * Math.sin(now / 320))
 
   mesh?.frame(now, level, generating.value)
   if (mode.value === 'voice' && waveRef.value) {
@@ -1058,6 +1372,20 @@ onMounted(() => {
     },
   })
 
+  // 语音播报：不支持 speechSynthesis 的浏览器静默降级（只在结果卡显示文字）
+  speech = new SpeechController(
+    {
+      canSpeak: () => !speechMuted.value && mounted,
+      onStart: () => {
+        speaking.value = true
+      },
+      onEnd: () => {
+        speaking.value = false
+      },
+    },
+    String(locale.value || 'zh-CN'),
+  )
+
   measure()
   startLoop()
   window.addEventListener('resize', measure)
@@ -1074,6 +1402,11 @@ onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', handleVisibility)
   handleDockDragEnd()
   stopPolling()
+  cancelAutoSend()
+  // 卸载/退出开发模式：正在念的语音必须立刻停掉，不能留在后台
+  speech?.dispose()
+  speech = null
+  speaking.value = false
   if (rafId) {
     window.cancelAnimationFrame(rafId)
     rafId = 0

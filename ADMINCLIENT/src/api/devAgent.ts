@@ -13,7 +13,15 @@ export interface DevAgentChangedFile {
   path: string
 }
 
-/** 一次执行的结果 */
+/** 通道：reply = 简短回复（TTS 播报）/ code = 后台执行代码 */
+export type DevAgentChannel = 'reply' | 'code'
+
+/**
+ * 一次执行的结果
+ *
+ * 历史记录（/runs）里简短回复通道会把答复放在 output 里，
+ * 这里保留可选的 answer 以兼容直接拿回复结果使用的场景。
+ */
 export interface DevAgentRunResult {
   ok: boolean
   exitCode: number | null
@@ -23,12 +31,38 @@ export interface DevAgentRunResult {
   files: DevAgentChangedFile[]
   finishedAt: string
   error?: string
+  /** 简短回复通道的纯文本答复（就是给 TTS 念的内容） */
+  answer?: string
 }
 
 /** 一条执行历史（面板用） */
 export interface DevAgentRunRecord extends DevAgentRunResult {
   id: string
   prompt: string
+  startedAt: string
+  /** 通道：reply 简短回复 / code 后台执行代码 */
+  channel?: DevAgentChannel
+  /** 是否仍在后台运行中 */
+  running?: boolean
+}
+
+/** reply 通道（同步返回）的结果 */
+export interface DevAgentReplyResult {
+  channel: 'reply'
+  answer: string
+  ok: boolean
+  exitCode: number | null
+  duration: number
+  files: DevAgentChangedFile[]
+  finishedAt: string
+}
+
+/** code 通道（立刻返回）的受理凭据 */
+export interface DevAgentCodeAccepted {
+  channel: 'code'
+  runId: string
+  started: boolean
+  running: boolean
   startedAt: string
 }
 
@@ -55,6 +89,9 @@ export interface DevAgentRuns {
 /** 任务最长等待时间：要覆盖后端 5 分钟的 Agent 超时（见 dev-agent.service.ts） */
 const GENERATE_TIMEOUT = 10 * 60 * 1000
 
+/** 简短回复通道的等待时间：后端 90s 超时，这里留一点余量 */
+const REPLY_TIMEOUT = 2 * 60 * 1000
+
 /**
  * 拆包：requestApi 返回的是后端统一响应体 { code, msg, data }，
  * 判定规则与原来独立控制台页面一致（code === 2000 才算成功）。
@@ -79,16 +116,20 @@ export async function getDevAgentRuns(): Promise<DevAgentRuns> {
 /**
  * 执行一次生成任务
  *
- * 注意：这个接口是「同步阻塞」的 —— 后端要等 Agent 跑完才返回，
- * 可能长达数分钟，所以单独放大 axios 超时（默认 8s 会被误判为失败）。
+ * 两个通道共用同一个接口，靠 body.channel 分流：
+ * - reply：同步阻塞（后端最长约 90s），返回一两句纯文本答复，前端用 TTS 念出来；
+ * - code：立刻返回 runId（毫秒级），后端在后台跑，前端轮询 /runs 看进度。
  */
-export async function generateByDevAgent(prompt: string): Promise<DevAgentRunResult> {
-  return unwrap<DevAgentRunResult>(
+export async function generateByDevAgent(
+  prompt: string,
+  channel: DevAgentChannel = 'reply',
+): Promise<DevAgentReplyResult | DevAgentCodeAccepted> {
+  return unwrap<DevAgentReplyResult | DevAgentCodeAccepted>(
     await requestApi({
       url: '/hippoadmin/dev-agent/generate',
       method: 'post',
-      data: { prompt },
-      timeout: GENERATE_TIMEOUT,
+      data: { prompt, channel },
+      timeout: channel === 'reply' ? REPLY_TIMEOUT : GENERATE_TIMEOUT,
     }),
   )
 }
