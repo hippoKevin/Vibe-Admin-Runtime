@@ -11,6 +11,7 @@ import { JwtStrategy } from 'src/common/strategies/jwt.strategy';
 import { PassportModule } from '@nestjs/passport';
 import { FileModule } from './module/system/file/file.module';
 import { SystemOpsModule } from './module/system/system-ops.module';
+import { DevAgentModule } from './module/system/dev-agent.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { SystemOpsModule } from './module/system/system-ops.module';
     RoleModule,
     FileModule,
     SystemOpsModule,
+    DevAgentModule,
   ],
   providers: [
     JwtStrategy, // 关键：注册 Strategy
