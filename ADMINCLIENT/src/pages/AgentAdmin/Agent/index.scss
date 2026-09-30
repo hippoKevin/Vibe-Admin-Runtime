@@ -1,0 +1,25 @@
+/* ===== 由 index.vue 提取 ===== */
+
+/* 页面铺满内容区：与系统运维子页面保持一致 */
+.container {
+  height: calc(100vh - 110px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+
+  /* 卡片铺满容器（AssetPanel 渲染的 t-card），卡片主体再吃掉剩余高度 */
+  :deep(.t-card) {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* 卡片主体内部按 flex 分配，左右两栏各自内部滚动 */
+  :deep(.t-card__body) {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+}

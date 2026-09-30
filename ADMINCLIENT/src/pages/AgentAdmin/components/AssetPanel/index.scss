@@ -1,0 +1,367 @@
+/* ===== 由 index.vue 提取：技能 / Agent / 工具三页共用的资产管理面板 =====
+   页面铺满规则（.container 高度 + 卡片主体 flex）由各页面 index.scss 提供 */
+
+.asset-panel {
+  /* 卡片头部在窄屏下允许换行，避免长目录路径把标题挤成竖排 */
+  :deep(.t-card__header) {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  /* 头部换行后，右侧状态行依然贴右显示 */
+  :deep(.t-card__actions) {
+    margin-left: auto;
+  }
+
+  &__title {
+    font-size: calc(15px * var(--app-font-scale, 1));
+    font-weight: 600;
+    color: var(--td-text-color-primary);
+    white-space: nowrap;
+  }
+
+  &__search {
+    width: 200px;
+  }
+
+  &__actions {
+    min-width: 0;
+    margin-left: auto;
+
+    /* 让 flex 子项可以被压缩，目录路径才会按 max-width 省略而不是把头部撑破 */
+    :deep(.t-space-item) {
+      min-width: 0;
+    }
+  }
+
+  &__root {
+    max-width: 220px;
+    min-width: 0;
+    overflow: hidden;
+    font-size: calc(12px * var(--app-font-scale, 1));
+    color: var(--td-text-color-placeholder);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__muted {
+    color: var(--td-text-color-placeholder);
+  }
+
+  /* 左右两栏铺满剩余高度，各自内部滚动 */
+  &__body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    gap: 10px;
+  }
+
+  &__list {
+    display: flex;
+    flex: 0 0 320px;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid var(--td-component-stroke);
+    border-radius: var(--td-radius-default);
+  }
+
+  &__list-head,
+  &__tree-head,
+  &__content-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--td-component-stroke);
+    background: var(--td-bg-color-secondarycontainer);
+    font-size: calc(13px * var(--app-font-scale, 1));
+    color: var(--td-text-color-secondary);
+  }
+
+  &__list-loading {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  &__list-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  &__item {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--td-component-stroke);
+    cursor: pointer;
+    transition: background 0.2s ease;
+
+    &:hover {
+      background: var(--td-bg-color-container-hover);
+    }
+
+    &--active {
+      background: var(--td-brand-color-light);
+    }
+  }
+
+  &__item-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  &__item-name {
+    font-size: calc(13px * var(--app-font-scale, 1));
+    font-weight: 600;
+    color: var(--td-text-color-primary);
+    word-break: break-all;
+  }
+
+  &__item-title {
+    margin-top: 2px;
+    overflow: hidden;
+    font-size: calc(12px * var(--app-font-scale, 1));
+    color: var(--td-text-color-secondary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__item-desc {
+    display: -webkit-box;
+    margin-top: 2px;
+    overflow: hidden;
+    font-size: calc(12px * var(--app-font-scale, 1));
+    color: var(--td-text-color-placeholder);
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  &__item-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 4px;
+    font-size: calc(12px * var(--app-font-scale, 1));
+    color: var(--td-text-color-placeholder);
+  }
+
+  &__empty {
+    padding: 24px 12px;
+    font-size: calc(13px * var(--app-font-scale, 1));
+    color: var(--td-text-color-placeholder);
+    text-align: center;
+
+    &--detail {
+      display: flex;
+      flex: 1;
+      align-items: center;
+      justify-content: center;
+    }
+  }
+
+  &__detail {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid var(--td-component-stroke);
+    border-radius: var(--td-radius-default);
+  }
+
+  &__detail-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--td-component-stroke);
+  }
+
+  &__detail-title {
+    display: flex;
+    align-items: baseline;
+    flex: 1;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  &__detail-name {
+    font-size: calc(14px * var(--app-font-scale, 1));
+    font-weight: 600;
+    color: var(--td-text-color-primary);
+    white-space: nowrap;
+  }
+
+  &__detail-path {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    font-size: calc(12px * var(--app-font-scale, 1));
+    color: var(--td-text-color-placeholder);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__alert {
+    margin: 8px 12px 0;
+  }
+
+  &__detail-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+  }
+
+  &__tree {
+    display: flex;
+    flex: 0 0 210px;
+    flex-direction: column;
+    min-height: 0;
+    border-right: 1px solid var(--td-component-stroke);
+  }
+
+  &__tree-body {
+    flex: 1;
+    min-height: 0;
+    padding: 4px 0;
+    overflow: auto;
+  }
+
+  &__node {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    font-size: calc(12px * var(--app-font-scale, 1));
+    color: var(--td-text-color-primary);
+    cursor: pointer;
+
+    &:hover {
+      background: var(--td-bg-color-container-hover);
+    }
+
+    &--active {
+      background: var(--td-brand-color-light);
+      color: var(--td-brand-color);
+    }
+
+    &--dir {
+      color: var(--td-text-color-secondary);
+    }
+  }
+
+  &__node-icon {
+    flex-shrink: 0;
+    color: var(--td-text-color-placeholder);
+  }
+
+  &__node-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__node-size {
+    flex-shrink: 0;
+    margin-left: auto;
+    padding-left: 8px;
+    color: var(--td-text-color-placeholder);
+  }
+
+  &__content {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  &__content-file {
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    color: var(--td-text-color-primary);
+  }
+
+  &__content-meta {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 8px;
+    color: var(--td-text-color-placeholder);
+  }
+
+  &__content-loading {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  /* 长文本就该待在可滚动的代码区里 */
+  &__code,
+  &__editor {
+    flex: 1;
+    min-height: 0;
+    margin: 0;
+    padding: 12px;
+    overflow: auto;
+    border: 0;
+    outline: none;
+    background: var(--td-bg-color-container);
+    color: var(--td-text-color-primary);
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-size: calc(12px * var(--app-font-scale, 1));
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  &__editor {
+    width: 100%;
+    resize: none;
+    border-left: 2px solid var(--td-brand-color);
+    background: var(--td-bg-color-secondarycontainer);
+  }
+
+  &__footer {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 20px;
+    font-size: calc(12px * var(--app-font-scale, 1));
+    color: var(--td-text-color-secondary);
+  }
+
+  /* 页脚里的目录太长，省略显示，完整路径看 title */
+  &__footer-path {
+    max-width: 46%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__dialog-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  &__dialog-label {
+    flex-shrink: 0;
+    width: 64px;
+    font-size: calc(13px * var(--app-font-scale, 1));
+    color: var(--td-text-color-secondary);
+    text-align: right;
+  }
+
+  &__dialog-tip {
+    font-size: calc(12px * var(--app-font-scale, 1));
+    color: var(--td-text-color-placeholder);
+  }
+}
