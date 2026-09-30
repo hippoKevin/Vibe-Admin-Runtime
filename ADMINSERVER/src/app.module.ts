@@ -12,6 +12,7 @@ import { PassportModule } from '@nestjs/passport';
 import { FileModule } from './module/system/file/file.module';
 import { SystemOpsModule } from './module/system/system-ops.module';
 import { DevAgentModule } from './module/system/dev-agent.module';
+import { AgentAdminModule } from './module/system/agent-admin.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { DevAgentModule } from './module/system/dev-agent.module';
     FileModule,
     SystemOpsModule,
     DevAgentModule,
+    AgentAdminModule,
   ],
   providers: [
     JwtStrategy, // 关键：注册 Strategy

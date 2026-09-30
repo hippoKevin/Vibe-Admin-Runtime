@@ -9,5 +9,7 @@ import { DevAgentService } from 'src/services/system/dev-agent.service';
 @Module({
     controllers: [DevAgentController],
     providers: [DevAgentService],
+    // 智能管理页要展示「开发模式是否就绪」，复用这里的探测逻辑
+    exports: [DevAgentService],
 })
 export class DevAgentModule {}

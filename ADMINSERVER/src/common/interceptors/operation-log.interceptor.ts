@@ -35,6 +35,9 @@ const SUMMARY_MAX_FIELDS = 6;
 /** 摘要里优先展示的字段名（id / 名称类字段最有用） */
 const SUMMARY_PRIORITY_KEYS = /(id|name|account|username|user|role|menu|dept|unit|title|code|status|type|key|count|total)/i;
 
+/** 摘要里直接跳过的「大块内容」字段：文件内容、正文之类，进来只会把日志撑爆 */
+const SUMMARY_SKIP_KEYS = /^(content|text|html|markdown|md|body|payload|data|base64)$/i;
+
 /**
  * 接口 → 人话操作名
  *
@@ -56,6 +59,11 @@ const OPERATION_ROUTES: OperationRoute[] = [
 
     // 开发模式（自然语言 → DSH 生成代码）
     { method: 'POST', path: 'dev-agent/generate', name: '开发模式生成代码' },
+
+    // 智能管理（技能 / Agent / 工具）
+    { method: 'POST', path: 'agent-admin/create', name: '新建智能资产' },
+    { method: 'POST', path: 'agent-admin/save', name: '保存智能资产' },
+    { method: 'POST', path: 'agent-admin/remove', name: '删除智能资产', destructive: true },
 
     // 用户
     { method: 'POST', path: 'user/add', name: '新增用户' },
@@ -313,6 +321,7 @@ export class OperationLogInterceptor implements NestInterceptor {
             // 先判空再去重：登录入参里常有 value.password 这种空壳字段，
             // 否则会出现「password=***, password=***」这种重复摘要
             if (value === null || value === undefined || value === '') return;
+            if (SUMMARY_SKIP_KEYS.test(key)) return;
             if (usedKeys.has(key)) return;
 
             usedKeys.add(key);
@@ -322,8 +331,9 @@ export class OperationLogInterceptor implements NestInterceptor {
                 return;
             }
 
-            const text = String(value);
-            if (text.length > SUMMARY_VALUE_MAX_LENGTH) return;
+            // 换行/连续空白压成单个空格，保证摘要始终是一行
+            const text = String(value).replace(/\s+/g, ' ').trim();
+            if (!text || text.length > SUMMARY_VALUE_MAX_LENGTH) return;
             pairs.push(`${key}=${text}`);
         };
 
