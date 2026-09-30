@@ -241,7 +241,13 @@ const flatMenuList = computed(() => {
 const filteredMenuResults = computed(() => {
     const keyword = menuSearchText.value.trim().toLowerCase()
     if (!keyword) return []
-    return flatMenuList.value.filter(item => item.menu_name?.toLowerCase().includes(keyword))
+    // 菜单名在库里是中文，界面上可能显示成英文（menuNames 映射），
+    // 所以原文和译文都要参与匹配，否则英文模式下搜 "skills" 搜不到
+    return flatMenuList.value.filter(item => {
+        const raw = String(item.menu_name || '').toLowerCase()
+        const translated = translateServerText(item.menu_name).toLowerCase()
+        return raw.includes(keyword) || translated.includes(keyword)
+    })
 })
 
 // 按目录分组，用于左侧分类栏展示
