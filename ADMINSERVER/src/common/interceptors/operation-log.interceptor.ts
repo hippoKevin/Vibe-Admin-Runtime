@@ -54,6 +54,9 @@ const OPERATION_ROUTES: OperationRoute[] = [
     { method: 'POST', path: 'common/login', name: '登录系统' },
     { method: 'POST', path: 'common/refresh_default', name: '恢复默认数据', destructive: true },
 
+    // 开发模式（自然语言 → DSH 生成代码）
+    { method: 'POST', path: 'dev-agent/generate', name: '开发模式生成代码' },
+
     // 用户
     { method: 'POST', path: 'user/add', name: '新增用户' },
     { method: 'POST', path: 'user/:userId/update', name: '修改用户' },
@@ -303,15 +306,21 @@ export class OperationLogInterceptor implements NestInterceptor {
      */
     private buildSummary(request: any): string | null {
         const pairs: string[] = [];
+        const usedKeys = new Set<string>();
 
         const pushScalar = (key: string, value: any) => {
             if (pairs.length >= SUMMARY_MAX_FIELDS) return;
+            // 先判空再去重：登录入参里常有 value.password 这种空壳字段，
+            // 否则会出现「password=***, password=***」这种重复摘要
+            if (value === null || value === undefined || value === '') return;
+            if (usedKeys.has(key)) return;
+
+            usedKeys.add(key);
 
             if (SECRET_KEY_REGEX.test(key)) {
                 pairs.push(`${key}=***`);
                 return;
             }
-            if (value === null || value === undefined || value === '') return;
 
             const text = String(value);
             if (text.length > SUMMARY_VALUE_MAX_LENGTH) return;
