@@ -28,6 +28,7 @@ async function bootstrap() {
   // 全局异常过滤器（统一错误返回）
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  await app.listen(5004);
+  // 端口：优先读环境变量（PM2 的 ecosystem.config.js 里配置了 PORT），未配置时沿用 5004
+  await app.listen(Number(process.env.PORT) || 5004);
 }
 bootstrap();
