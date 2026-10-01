@@ -1,8 +1,8 @@
 <template>
   <!--
     开发模式：应用内的原生组件 + 一层幕布（不是弹窗、不是 iframe、不是新窗口）
-    - 整屏浅色幕布 pointer-events: none，页面内容透过幕布可见、照常可点；
-    - 球体 / 输入区 / 面板这些「实体」各自接收鼠标事件；
+    - 整屏浅色幕布 pointer-events: auto，页面内容透过幕布看得见，但点击被幕布吃掉；
+    - 球体 / 输入区 / 面板这些「实体」都在幕布之上（z-index 更高）照常可点；
     - 挂载点固定在 App.vue，页面级热更新不会把它卸载，状态全部持久化在 localStorage。
   -->
   <div
@@ -190,7 +190,7 @@
       </div>
     </div>
 
-    <!-- Agent 执行过程面板 -->
+    <!-- 对话 + 轨迹面板（拉开幕布看系统、拉开面板看过程） -->
     <section
       v-show="panelOpen"
       class="dev-mode__panel"
@@ -223,6 +223,9 @@
             @input="handleVeilAlphaInput"
           />
         </label>
+        <span class="dev-mode__panel-runs" data-testid="dev-console-run-count">
+          {{ $t('devMode.chatRunsCount', { count: runs.length }) }}
+        </span>
         <button
           type="button"
           class="dev-mode__btn"
@@ -233,75 +236,174 @@
       </div>
 
       <div class="dev-mode__panel-body" data-testid="dev-console-panel-body">
-        <div class="dev-mode__section">
-          <div class="dev-mode__section-title">{{ $t('devMode.panelLatest') }}</div>
-          <template v-if="detailRecord">
-            <div class="dev-mode__kv">
-              <span class="dev-mode__kv-key">{{ $t('devMode.panelPrompt') }}</span>
-              <span class="dev-mode__kv-val">{{ detailRecord.prompt || $t('devMode.panelPromptEmpty') }}</span>
+        <!-- 左侧：模式 / 会话 / 当前模型（只读） -->
+        <aside class="dev-mode__side">
+          <div class="dev-mode__side-block">
+            <div class="dev-mode__side-label">
+              <span>{{ $t('devMode.modeLabel') }}</span>
+              <t-tooltip :content="$t('devMode.modeTip')">
+                <HelpCircleIcon class="dev-mode__help" data-testid="dev-console-mode-help" />
+              </t-tooltip>
             </div>
-            <div class="dev-mode__kv">
-              <span class="dev-mode__kv-key">{{ $t('devMode.panelDuration') }}</span>
-              <span class="dev-mode__kv-val">{{ formatDuration(detailRecord.duration) }}</span>
-            </div>
-            <div class="dev-mode__kv">
-              <span class="dev-mode__kv-key">{{ $t('devMode.panelExitCode') }}</span>
-              <span class="dev-mode__kv-val">{{ detailRecord.exitCode == null ? '—' : detailRecord.exitCode }}</span>
-            </div>
-            <div class="dev-mode__kv">
-              <span class="dev-mode__kv-key">{{ $t('devMode.panelFinishedAt') }}</span>
-              <span class="dev-mode__kv-val">{{ formatClock(detailRecord.finishedAt) }}</span>
-            </div>
-            <div v-if="detailRecord.error" class="dev-mode__kv">
-              <span class="dev-mode__kv-key">{{ $t('devMode.panelError') }}</span>
-              <span class="dev-mode__kv-val">{{ detailRecord.error }}</span>
-            </div>
-          </template>
-          <div v-else class="dev-mode__muted">{{ $t('devMode.panelEmpty') }}</div>
-        </div>
-
-        <div v-if="detailRecord" class="dev-mode__section">
-          <div class="dev-mode__section-title">
-            {{ $t('devMode.panelFiles', { count: (detailRecord.files || []).length }) }}
-          </div>
-          <ul v-if="(detailRecord.files || []).length" class="dev-mode__files">
-            <li v-for="(file, index) in detailRecord.files" :key="`${file.path}-${index}`" class="dev-mode__file">
-              <span class="dev-mode__tag" :class="`dev-mode__tag--${statusInfo(file.status).key}`">
-                {{ statusInfo(file.status).label }}
-              </span>
-              <span class="dev-mode__path">{{ file.path }}</span>
-            </li>
-          </ul>
-          <div v-else class="dev-mode__muted">{{ $t('devMode.panelNoFiles') }}</div>
-        </div>
-
-        <div v-if="detailRecord" class="dev-mode__section">
-          <div class="dev-mode__section-title">{{ $t('devMode.panelOutput') }}</div>
-          <pre class="dev-mode__pre">{{ detailRecord.output || $t('devMode.panelNoContent') }}</pre>
-        </div>
-
-        <div v-if="detailRecord" class="dev-mode__section">
-          <div class="dev-mode__section-title">{{ $t('devMode.panelReasoning') }}</div>
-          <pre class="dev-mode__pre">{{ detailRecord.reasoningTail || $t('devMode.panelNoContent') }}</pre>
-        </div>
-
-        <div v-if="runs.length" class="dev-mode__section">
-          <div class="dev-mode__section-title">{{ $t('devMode.panelHistory', { count: runs.length }) }}</div>
-          <ul class="dev-mode__history">
-            <li
-              v-for="run in runs"
-              :key="run.id"
-              class="dev-mode__history-item"
-              :class="{ 'dev-mode__history-item--active': String(run.id) === String(selectedRunId) }"
-              @click="selectRun(run)"
+            <select
+              v-model="profileName"
+              class="dev-mode__select"
+              data-testid="dev-console-mode"
+              @change="handleProfileChange"
             >
-              <span class="dev-mode__mono">{{ formatClock(run.finishedAt) }}</span>
-              <span class="dev-mode__history-prompt">{{ run.prompt || $t('devMode.noPrompt') }}</span>
-              <span class="dev-mode__mono">
-                {{ formatDuration(run.duration) }} · {{ $t('devMode.fileCount', { count: (run.files || []).length }) }}
+              <option v-if="!profileOptions.length" :value="profileName">{{ profileName }}</option>
+              <option v-for="item in profileOptions" :key="item" :value="item">{{ item }}</option>
+            </select>
+            <div v-if="!profileOptions.length" class="dev-mode__side-muted" data-testid="dev-console-mode-empty">
+              {{ $t('devMode.modeEmpty') }}
+            </div>
+          </div>
+
+          <div class="dev-mode__side-block">
+            <div class="dev-mode__side-label">
+              <span>{{ $t('devMode.chatSession') }}</span>
+              <button
+                type="button"
+                class="dev-mode__link"
+                data-testid="dev-console-new-chat"
+                :title="$t('devMode.chatNew')"
+                @click="handleNewChat"
+              >{{ $t('devMode.chatNew') }}</button>
+            </div>
+            <div class="dev-mode__side-mono" data-testid="dev-console-session">
+              {{ sessionId ? truncateMiddle(sessionId, 18) : $t('devMode.chatSessionNone') }}
+            </div>
+          </div>
+
+          <div class="dev-mode__side-block">
+            <div class="dev-mode__side-label">
+              <span>{{ $t('devMode.modelLabel') }}</span>
+              <t-tooltip :content="$t('devMode.modelTip')">
+                <HelpCircleIcon class="dev-mode__help" data-testid="dev-console-model-help" />
+              </t-tooltip>
+            </div>
+            <!-- headless 没有 --model 参数：能读到就展示，读不到就说明它跟随 profile 配置 -->
+            <div
+              v-if="modelName"
+              class="dev-mode__model"
+              data-testid="dev-console-model"
+            >{{ modelName }}</div>
+            <div v-else class="dev-mode__side-muted" data-testid="dev-console-model-readonly">
+              {{ $t('devMode.modelUnknown') }}
+            </div>
+          </div>
+        </aside>
+
+        <!-- 右侧：对话（指令 + 答复）+ 每条运行的轨迹 -->
+        <div class="dev-mode__chat">
+          <div class="dev-mode__chat-title">{{ $t('devMode.chatTitle') }}</div>
+
+          <div v-if="!conversations.length" class="dev-mode__muted" data-testid="dev-console-chat-empty">
+            {{ $t('devMode.chatEmpty') }}
+          </div>
+
+          <div
+            v-for="group in conversations"
+            :key="group.key"
+            class="dev-mode__conv"
+            data-testid="dev-console-conversation"
+          >
+            <div class="dev-mode__conv-head">
+              <span class="dev-mode__conv-name">{{ group.title }}</span>
+              <span class="dev-mode__conv-meta">
+                {{ formatClock(group.updatedAt) }} · {{ $t('devMode.chatFiles', { count: group.fileCount }) }}
               </span>
-            </li>
-          </ul>
+            </div>
+
+            <div
+              v-for="item in group.records"
+              :key="item.record.id"
+              class="dev-mode__turn"
+              data-testid="dev-console-turn"
+            >
+              <div class="dev-mode__bubble dev-mode__bubble--me">
+                <span class="dev-mode__bubble-who">{{ $t('devMode.chatMe') }}</span>
+                <span class="dev-mode__bubble-text">{{ item.prompt || $t('devMode.noPrompt') }}</span>
+              </div>
+
+              <div class="dev-mode__bubble" :class="{ 'dev-mode__bubble--error': item.isError }">
+                <span class="dev-mode__bubble-who">{{ $t('devMode.chatAgent') }}</span>
+                <span class="dev-mode__bubble-text">
+                  {{ item.isError ? $t('devMode.chatFailed') : (item.answer || $t('devMode.panelNoContent')) }}
+                </span>
+              </div>
+
+              <div class="dev-mode__turn-meta">
+                <span class="dev-mode__mono">{{ formatClock(item.record.startedAt) }}</span>
+                <span class="dev-mode__mono">{{ formatDuration(item.record.duration) }}</span>
+                <span v-if="item.record.running" class="dev-mode__running">{{ $t('devMode.chatRunning') }}</span>
+                <span
+                  v-else
+                  class="dev-mode__mono"
+                  :class="{ 'dev-mode__meta--error': item.isError }"
+                >{{ item.exitText }}</span>
+              </div>
+
+              <ul v-if="item.filePaths.length" class="dev-mode__files">
+                <li
+                  v-for="(filePath, fileIndex) in item.filePaths"
+                  :key="`${item.record.id}-${filePath}-${fileIndex}`"
+                  class="dev-mode__file"
+                >
+                  <span class="dev-mode__path">{{ filePath }}</span>
+                </li>
+              </ul>
+
+              <!-- 轨迹：每条运行可展开，按 events 通用渲染（未知 type 也能显示） -->
+              <div class="dev-mode__trace">
+                <button
+                  type="button"
+                  class="dev-mode__trace-toggle"
+                  data-testid="dev-console-trace-toggle"
+                  :aria-expanded="isTraceOpen(item.record) ? 'true' : 'false'"
+                  @click="toggleTrace(item.record)"
+                >
+                  <span class="dev-mode__caret">{{ isTraceOpen(item.record) ? '▾' : '▸' }}</span>
+                  <span>{{ $t('devMode.chatTraceCount', { count: item.trace.steps.length }) }}</span>
+                </button>
+
+                <div
+                  v-if="isTraceOpen(item.record)"
+                  class="dev-mode__trace-body"
+                  data-testid="dev-console-trace"
+                >
+                  <div v-if="item.trace.truncated" class="dev-mode__muted" data-testid="dev-console-trace-truncated">
+                    {{ $t('devMode.chatTraceTruncated', { count: TRACE_STEP_LIMIT }) }}
+                  </div>
+
+                  <div v-if="!item.trace.steps.length" class="dev-mode__muted" data-testid="dev-console-trace-empty">
+                    {{ $t('devMode.chatTraceEmpty') }}
+                  </div>
+
+                  <div
+                    v-for="step in item.trace.steps"
+                    :key="step.key"
+                    class="dev-mode__step"
+                    :class="`dev-mode__step--${step.kind}`"
+                    :data-step-kind="step.kind"
+                  >
+                    <span class="dev-mode__step-icon" aria-hidden="true">{{ step.icon }}</span>
+                    <span class="dev-mode__step-label" :title="step.label">{{ step.label }}</span>
+                    <span class="dev-mode__step-text" :title="step.text">
+                      {{ isStepOpen(step.key) ? step.text : truncateText(step.text, STEP_TEXT_LIMIT) }}
+                      <button
+                        v-if="step.text.length > STEP_TEXT_LIMIT"
+                        type="button"
+                        class="dev-mode__link"
+                        data-testid="dev-console-step-more"
+                        @click="toggleStep(step.key)"
+                      >{{ isStepOpen(step.key) ? $t('devMode.chatTraceCollapse') : $t('devMode.chatTraceExpand') }}</button>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -317,17 +419,21 @@ export default {
 <script lang="ts" setup>
 // 1. 第三方依赖
 import { MessagePlugin } from 'tdesign-vue-next'
+import { HelpCircleIcon } from 'tdesign-icons-vue-next'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 // 2. 工程内工具
 import { useI18n } from 'vue-i18n'
 import router from '@/router'
 import { useUserStore } from '@/stores/userStore'
 import {
+  type DshRunEvent,
   type DevAgentChangedFile,
   type DevAgentCodeAccepted,
+  type DevAgentProfile,
   type DevAgentReplyResult,
   type DevAgentRunRecord,
   type DevAgentRunResult,
+  getDevAgentProfiles,
   getDevAgentRuns,
   getDevAgentStatus,
   generateByDevAgent,
@@ -340,6 +446,8 @@ import {
   devModeDraft,
   devModePanelAlpha,
   devModePanelOpen,
+  devModeProfile,
+  devModeSessionId,
   devModeSpeak,
   devModeVeilAlpha,
   isDevModeAllowed,
@@ -348,6 +456,8 @@ import {
   saveDevModeDraft,
   saveDevModePanelAlpha,
   saveDevModePanelOpen,
+  saveDevModeProfile,
+  saveDevModeSessionId,
   saveDevModeSpeak,
   saveDevModeVeilAlpha,
 } from '@/utils/devMode'
@@ -363,8 +473,8 @@ import { VoiceInput } from './controller/voice'
  * 「Agent 执行过程」面板 + 透明度滑块、执行态球体消失只剩波纹、退出按钮。
  *
  * 与「独立页面」版本的区别：
- *   1) 只做一层整屏浅色幕布来区分（幕布 pointer-events: none，页面照常可点、看得清；
- *      浓度只留「淡淡一层」，面板头部可调）；
+ *   1) 只做一层整屏浅色幕布来区分：幕布半透明（系统页面看得清）但接收鼠标事件
+ *      （系统页面点不动），控制台自己的球体 / 输入区 / 面板都在幕布之上，照常可点；
  *   2) 不再用 postMessage / window.open —— 完成后直接按菜单归一比对并 router.push；
  *   3) 状态全部持久化，刷新后自动恢复；挂载时请求 /status 与 /runs，
  *      若后端还有任务在跑就直接进入执行态并轮询到结束（Agent 不会被打断）。
@@ -390,6 +500,82 @@ const AGENT_DIR_PREFIX = 'adminagent/'
 /** 音轨位置允许的偏移范围（px） */
 const DOCK_OFFSET_MIN = -180
 const DOCK_OFFSET_MAX = 240
+/** 轨迹面板最多渲染最近多少条事件（后端最多给 300 条） */
+const TRACE_STEP_LIMIT = 200
+/** 轨迹单步文本默认截断长度 */
+const STEP_TEXT_LIMIT = 160
+/** 轨迹单步里长字段的截断长度（tool 名 / 状态等） */
+const STEP_FIELD_LIMIT = 60
+/** 事件里这些字段是元数据（时间戳、序号…），不作为兜底文案展示 */
+const EVENT_SKIP_KEYS = new Set([
+  'type',
+  'phase',
+  'status',
+  'turn',
+  'step',
+  'index',
+  'seq',
+  'sequence',
+  'ts',
+  'time',
+  'timestamp',
+  'at',
+  'createdAt',
+  'startedAt',
+  'finishedAt',
+  'duration',
+  'sessionId',
+  'session_id',
+  'id',
+  'uuid',
+  'runId',
+  'level',
+])
+
+/** 轨迹一行的类型 → 图标与颜色（未知类型统一走 other） */
+const TRACE_KINDS: Record<string, { icon: string; labelKey: string }> = {
+  session: { icon: '◈', labelKey: 'devMode.traceStep.session' },
+  status: { icon: '≡', labelKey: 'devMode.traceStep.status' },
+  thinking: { icon: '✳', labelKey: 'devMode.traceStep.thinking' },
+  text: { icon: '❝', labelKey: 'devMode.traceStep.text' },
+  final: { icon: '✓', labelKey: 'devMode.traceStep.final' },
+  tool: { icon: '⚒', labelKey: 'devMode.traceStep.tool' },
+}
+
+/** 轨迹一行 */
+interface TraceStep {
+  key: string
+  kind: string
+  icon: string
+  label: string
+  text: string
+}
+
+/** 一次运行的轨迹（已限量截断） */
+interface TraceData {
+  steps: TraceStep[]
+  truncated: boolean
+}
+
+/** 对话里的一次运行 */
+interface TurnItem {
+  record: DevAgentRunRecord
+  prompt: string
+  answer: string
+  isError: boolean
+  exitText: string
+  filePaths: string[]
+  trace: TraceData
+}
+
+/** 一段对话（同 sessionId 的多次运行） */
+interface Conversation {
+  key: string
+  title: string
+  records: TurnItem[]
+  updatedAt: string
+  fileCount: number
+}
 
 /** 菜单里的一个可跳转页面 */
 interface MenuPage {
@@ -455,6 +641,16 @@ const resultChannel = ref<DevModeChannel>('reply')
 const speaking = ref(false)
 /** 是否已转入后台执行（「后台执行」通道提交后立刻为 true，不阻塞界面） */
 const backgroundRunning = ref(false)
+/** DSH profile（「模式」下拉框的选中值，参与提交） */
+const profileName = ref<string>(devModeProfile.value)
+/** /dev-agent/profiles 返回的模式列表（接口未上线时为空，此时只显示手填的当前值） */
+const profileOptions = ref<string[]>([])
+/** 当前会话 id（带上它就是接着这条会话继续追问；空 = 新对话） */
+const sessionId = ref<string>(devModeSessionId.value)
+/** 轨迹面板里被单独展开看全文的步骤 */
+const expandedSteps = ref<Set<string>>(new Set())
+/** 手工展开 / 收拢过的轨迹（按运行 id 记录） */
+const traceOverrides = ref<Record<string, boolean>>({})
 
 /** 球体画布控制器 */
 let mesh: SphereMesh | null = null
@@ -525,23 +721,71 @@ const resultFiles = computed<DevAgentChangedFile[]>(() => {
   return record && Array.isArray(record.files) ? record.files : []
 })
 
-/** 面板顶部展示的记录：本地结果与选中的历史里取更新的那次 */
-const detailRecord = computed<DevAgentRunRecord | null>(() => {
-  const history = runs.value
-  let selected: DevAgentRunRecord | null = null
-  for (const item of history) {
-    if (String(item.id) === String(selectedRunId.value)) {
-      selected = item
-      break
+/** /runs 里的记录 + 本地刚拿到的那次结果（去重后按 id 归并，供对话与轨迹使用） */
+const panelRecords = computed<DevAgentRunRecord[]>(() => {
+  const list = [...runs.value]
+  const local = lastResult.value as DevAgentRunRecord | null
+  if (local && !list.some((item) => String(item.id) === String(local.id))) {
+    list.push({ ...local, channel: resultChannel.value })
+  }
+  return list
+})
+
+/**
+ * 对话
+ *
+ * 同 sessionId 的多次运行归到一段对话里，段内按开始时间升序（指令 → 答复），
+ * 段之间按最近一次运行倒序（最新的对话在最上面）。
+ */
+const conversations = computed<Conversation[]>(() => {
+  const groups = new Map<string, DevAgentRunRecord[]>()
+
+  panelRecords.value.forEach((record, index) => {
+    const key = String(record.sessionId || '').trim() || `single-${index}`
+    const list = groups.get(key)
+    if (list) list.push(record)
+    else groups.set(key, [record])
+  })
+
+  const result: Conversation[] = []
+  groups.forEach((records, key) => {
+    const sorted = [...records].sort((prev, next) => timeValue(prev.startedAt) - timeValue(next.startedAt))
+    const turns = sorted.map((record) => toTurnItem(record))
+    const last = sorted[sorted.length - 1]
+    const latestPrompt = [...turns].reverse().find((item) => item.prompt)?.prompt || ''
+    const fileCount = sorted.reduce((total, record) => total + (record.files?.length || 0), 0)
+
+    result.push({
+      key,
+      title: latestPrompt ? truncateText(latestPrompt, 36) : t('devMode.noPrompt'),
+      records: turns,
+      updatedAt: last?.finishedAt || last?.startedAt || '',
+      fileCount,
+    })
+  })
+
+  return result.sort(
+    (prev, next) => timeValue(next.updatedAt) - timeValue(prev.updatedAt),
+  )
+})
+
+/**
+ * 「当前模型」：从 events / status 里能读到就显示，读不到就返回空串（界面显示一行只读说明）
+ *
+ * headless 应用没有 --model 参数，所以这里只做展示，不做选择。
+ */
+const modelName = computed(() => {
+  const keys = ['model', 'modelName', 'model_name', 'modelId', 'model_id']
+  for (const record of panelRecords.value) {
+    const events = Array.isArray(record?.events) ? record.events : []
+    for (const event of events) {
+      for (const key of keys) {
+        const value = String(event?.[key] ?? '').trim()
+        if (value) return value
+      }
     }
   }
-  if (!selected) selected = history[0] || null
-
-  const local = lastResult.value as DevAgentRunRecord | null
-  if (local && (!selected || new Date(local.finishedAt || 0) >= new Date(selected.finishedAt || 0))) {
-    return local
-  }
-  return selected
+  return ''
 })
 
 /**
@@ -564,6 +808,182 @@ function formatClock(iso: string | null | undefined): string {
   if (!date || Number.isNaN(date.getTime())) return '—'
   const pad = (n: number) => (n < 10 ? '0' : '') + n
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
+/** 时间戳（毫秒）：排序用，非法值垫底 */
+function timeValue(iso: string | null | undefined): number {
+  const value = new Date(String(iso || '')).getTime()
+  return Number.isFinite(value) ? value : 0
+}
+
+/** 文本截断：超过长度补省略号 */
+function truncateText(text: string, limit: number): string {
+  const value = String(text == null ? '' : text)
+  return value.length > limit ? `${value.slice(0, limit)}…` : value
+}
+
+/** 中间省略：会话 id 这类长串只留头尾，一眼能区分就够 */
+function truncateMiddle(value: string, limit: number): string {
+  const text = String(value || '')
+  if (text.length <= limit) return text
+  const head = Math.ceil(limit / 2)
+  const tail = Math.max(1, limit - head)
+  return `${text.slice(0, head)}…${text.slice(text.length - tail)}`
+}
+
+/** 一个事件里的标量字段 */
+function eventFields(event: DshRunEvent): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(event || {})) {
+    if (value == null) continue
+    if (typeof value === 'string') {
+      const text = value.trim()
+      if (text) result[key] = text
+      continue
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') result[key] = value
+  }
+  return result
+}
+
+/** 按给定字段顺序取第一个非空值 */
+function pickField(record: Record<string, unknown>, keys: string[], limit = STEP_FIELD_LIMIT): string {
+  for (const key of keys) {
+    const value = record[key]
+    if (value === undefined) continue
+    const text = String(value).trim()
+    if (text) return truncateText(text, limit)
+  }
+  return ''
+}
+
+/**
+ * 一条事件的兜底文案
+ *
+ * 通用渲染的关键：不认识的事件类型也能凑出一段可读文本 ——
+ * 先挑常见的内容字段，再退到任意非元数据的标量字段，最差也能显示「—」。
+ */
+function eventText(kind: string, fields: Record<string, unknown>): string {
+  let text = ''
+  if (kind === 'session') text = pickField(fields, ['sessionId', 'session_id', 'id'])
+  else if (kind === 'status') text = pickField(fields, ['phase', 'status', 'name', 'message'])
+  else text = pickField(fields, ['text', 'message', 'content', 'answer', 'output', 'result'])
+
+  if (!text) text = pickField(fields, ['label', 'title', 'name', 'tool', 'phase', 'status'])
+
+  if (!text) {
+    for (const [key, value] of Object.entries(fields)) {
+      if (EVENT_SKIP_KEYS.has(key)) continue
+      const candidate = truncateText(String(value), STEP_TEXT_LIMIT)
+      if (candidate) {
+        text = candidate
+        break
+      }
+    }
+  }
+
+  return text || '—'
+}
+
+/** 事件类型 → 轨迹类型（未知类型一律 other，仍然会被渲染出来） */
+function traceKindOf(type: string): string {
+  const value = type.toLowerCase()
+  if (value === 'tool' || value.includes('tool')) return 'tool'
+  if (TRACE_KINDS[value]) return value
+  if (value.includes('think') || value.includes('reason')) return 'thinking'
+  if (value.includes('final')) return 'final'
+  if (value.includes('text') || value.includes('message')) return 'text'
+  if (value.includes('session')) return 'session'
+  if (value.includes('status')) return 'status'
+  return 'other'
+}
+
+/**
+ * 把一次运行的 events 渲染成轨迹步骤
+ *
+ * 只留最近 TRACE_STEP_LIMIT 条（后端最多给 300 条），截断时在面板上明说。
+ */
+function buildTrace(record: DevAgentRunRecord): TraceData {
+  const events = Array.isArray(record?.events) ? record.events : []
+  const kept = events.length > TRACE_STEP_LIMIT ? events.slice(events.length - TRACE_STEP_LIMIT) : events
+  const prefix = String(record?.id ?? '')
+
+  const steps = kept.map((event, index) => {
+    const type = String(event?.type || 'unknown')
+    const kind = traceKindOf(type)
+    const fields = eventFields(event)
+    const shape = TRACE_KINDS[kind] || { icon: '•', labelKey: '' }
+    // 未知类型把原始 type 亮出来，将来出现子智能体 / 工具事件时一眼能看出是什么
+    const fallbackLabel = type.length > 20 ? `${type.slice(0, 20)}…` : type
+    let label = shape.labelKey ? t(shape.labelKey) : fallbackLabel
+    // 工具事件把工具名并进标题，正文留给描述（子智能体事件同理）
+    if (kind === 'tool') {
+      const toolName = pickField(fields, ['tool', 'name', 'toolName', 'tool_name'])
+      if (toolName) label = `${label} ${toolName}`
+    }
+    const turn = fields.turn != null ? ` #${fields.turn}/${fields.step ?? 1}` : ''
+
+    return {
+      key: `${prefix}-${index}`,
+      kind,
+      icon: shape.icon,
+      label: `${label}${turn}`,
+      text: eventText(kind, fields),
+    }
+  })
+
+  return { steps, truncated: events.length > kept.length }
+}
+
+/** 一次运行在对话里的展示数据 */
+function toTurnItem(record: DevAgentRunRecord): TurnItem {
+  const isError = !record.running && (!!record.error || record.ok === false)
+  const files = Array.isArray(record.files) ? record.files : []
+  const answer = recordChannel(record) === 'reply'
+    ? String(record.answer || record.output || '')
+    : String(record.output || '')
+
+  return {
+    record,
+    prompt: String(record.prompt || '').trim(),
+    answer,
+    isError,
+    exitText: record.error
+      ? String(record.error)
+      : t('devMode.exitCodeLabel', { code: record.exitCode == null ? '—' : record.exitCode }),
+    filePaths: files.map((file) => String(file?.path || '')).filter(Boolean).slice(0, 4),
+    trace: buildTrace(record),
+  }
+}
+
+/** 轨迹默认展开：执行中的记录、以及最近一次运行（如果它有轨迹） */
+function isTraceOpen(record: DevAgentRunRecord): boolean {
+  const override = traceOverrides.value[String(record.id)]
+  if (typeof override === 'boolean') return override
+  if (record.running) return true
+  const events = Array.isArray(record.events) ? record.events : []
+  if (!events.length) return false
+  const latestGroup = conversations.value[0]
+  const latest = latestGroup?.records[latestGroup.records.length - 1]
+  return !!latest && String(latest.record.id) === String(record.id)
+}
+
+/** 展开 / 收拢某条运行的轨迹 */
+function toggleTrace(record: DevAgentRunRecord) {
+  traceOverrides.value = { ...traceOverrides.value, [String(record.id)]: !isTraceOpen(record) }
+}
+
+/** 某个轨迹步骤是否被展开看全文 */
+function isStepOpen(key: string): boolean {
+  return expandedSteps.value.has(key)
+}
+
+/** 展开 / 收拢某个轨迹步骤的全文 */
+function toggleStep(key: string) {
+  const next = new Set(expandedSteps.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  expandedSteps.value = next
 }
 
 /** git 状态码 → i18n 标签 + 样式后缀 */
@@ -673,8 +1093,53 @@ function togglePanel() {
   else openPanel()
 }
 
-function selectRun(run: DevAgentRunRecord) {
-  selectedRunId.value = run.id
+/**
+ * Profile Setting
+ * 模式（DSH profile）：列表来自 /dev-agent/profiles，选中值参与提交
+ */
+
+/** 拉一次 profile 列表；接口未上线（或返回空）时保留下拉框，只是只能看到当前值 */
+async function loadProfiles() {
+  const items: DevAgentProfile[] = await getDevAgentProfiles()
+  profileOptions.value = items
+    .map((item) => String(item?.name || '').trim())
+    .filter((name: string) => !!name)
+
+  const active = items.find((item) => item?.active)?.name
+  if ((!profileName.value || !profileOptions.value.includes(profileName.value)) && active) {
+    profileName.value = String(active)
+    saveDevModeProfile(profileName.value)
+    return
+  }
+  if (!profileName.value) profileName.value = profileOptions.value[0] || devModeProfile.value
+}
+
+/** 切换模式：立刻持久化，下一次提交带上它 */
+function handleProfileChange() {
+  saveDevModeProfile(profileName.value)
+  setHint(t('devMode.modeSwitched', { name: profileName.value }))
+}
+
+/**
+ * Session Setting
+ * 会话：显示当前 sessionId，新对话清空它（下次提交不带 sessionId）
+ */
+
+/** 记住后端返回的会话 id（同一条会话继续追问） */
+function rememberSessionId(value: string | null | undefined) {
+  const next = String(value || '').trim()
+  if (!next || next === sessionId.value) return
+  sessionId.value = next
+  saveDevModeSessionId(next)
+}
+
+/** 新对话：清空 sessionId，下次提交就是新会话 */
+function handleNewChat() {
+  sessionId.value = ''
+  saveDevModeSessionId('')
+  expandedSteps.value = new Set()
+  traceOverrides.value = {}
+  setHint(t('devMode.chatSessionCleared'))
 }
 
 /** 面板背景透明度：滑块输入即写 localStorage */
@@ -851,6 +1316,14 @@ function enterBackground(hintKey: string) {
 
 function applyRunsData(data: { items?: DevAgentRunRecord[] } | null | undefined) {
   runs.value = Array.isArray(data?.items) ? data.items : []
+  // 刷新后如果本地还没记会话 id，就接住最近一次运行的那条（新对话仍以本地空值为准）
+  if (!sessionId.value) {
+    const latest = runs.value.find((item) => String(item.sessionId || '').trim())
+    if (latest) {
+      sessionId.value = String(latest.sessionId)
+      saveDevModeSessionId(sessionId.value)
+    }
+  }
 }
 
 /** 拉一次执行历史（面板用；失败不打断主流程） */
@@ -928,6 +1401,8 @@ function pollUntilRunDone(runId: string | number | null, adopted = false) {
           const channelOfRun = recordChannel(finished)
           lastResult.value = finished
           selectedRunId.value = finished.id
+          // 后台跑完的记录里带 sessionId，接住它后续追问才能落在同一条会话
+          rememberSessionId(finished.sessionId)
           renderResult(
             finished,
             false,
@@ -1249,18 +1724,32 @@ async function runReply(prompt: string) {
   enterBusy('devMode.runningHint')
 
   try {
-    const accepted = (await generateByDevAgent(prompt, 'reply')) as DevAgentReplyResult
+    const accepted = (await generateByDevAgent(prompt, 'reply', {
+      profile: profileName.value,
+      sessionId: sessionId.value,
+    })) as DevAgentReplyResult
     const answer = String(accepted?.answer || '')
-    const record: DevAgentRunResult = {
+    const finishedAt = accepted?.finishedAt || new Date().toISOString()
+    // 快速回复同样进面板：自己造一条完整记录（带 prompt / 轨迹），刷新后由 /runs 覆盖
+    const record: DevAgentRunRecord = {
+      id: `reply-${finishedAt}`,
+      prompt,
+      startedAt: finishedAt,
+      sessionId: String(accepted?.sessionId || sessionId.value || ''),
+      channel: 'reply',
+      running: false,
+      events: Array.isArray(accepted?.events) ? accepted.events : [],
       ok: !!accepted?.ok,
       exitCode: accepted?.exitCode ?? null,
       duration: Number(accepted?.duration) || 0,
       output: answer,
       reasoningTail: '',
       files: Array.isArray(accepted?.files) ? accepted.files : [],
-      finishedAt: accepted?.finishedAt || new Date().toISOString(),
+      finishedAt,
       answer,
     }
+    // 后端可能回传（或纠正）会话 id：记下来，下一次追问就落在同一条会话里
+    rememberSessionId(accepted?.sessionId)
     selectedRunId.value = null
     renderResult(record, false, 'reply', answer)
     // 答复在结果卡里最多显示几行，播报才是完整内容
@@ -1307,10 +1796,14 @@ async function runReply(prompt: string) {
 /** 后台执行通道：立刻表示已受理，然后轮询到结束 */
 async function runBackground(prompt: string) {
   try {
-    const accepted = (await generateByDevAgent(prompt, 'code')) as DevAgentCodeAccepted
+    const accepted = (await generateByDevAgent(prompt, 'code', {
+      profile: profileName.value,
+      sessionId: sessionId.value,
+    })) as DevAgentCodeAccepted
 
     // 立刻表示「已转入后台执行」：绝不在界面上等它跑完
     enterBackground('devMode.backgroundAccepted')
+    rememberSessionId(accepted?.sessionId)
     selectedRunId.value = accepted?.runId ?? null
     pollComplete = () => {
       stopBusy()
@@ -1462,6 +1955,7 @@ onMounted(() => {
   // 刷新/重开后自动接回后端状态（包含正在跑的任务）
   loadStatus()
   refreshRuns()
+  loadProfiles()
 })
 
 onBeforeUnmount(() => {

@@ -1,6 +1,6 @@
 <template>
   <!-- 卡片高度与主体布局由页面 .container 提供（见各页面 index.scss） -->
-  <t-card class="asset-panel">
+  <t-card class="asset-panel" data-testid="asset-panel">
     <!-- 工具条：标题 + 计数 + 关键字搜索 + 刷新 + 新建 -->
     <template #title>
       <t-space align="center">
@@ -104,12 +104,13 @@
               <span class="asset-panel__detail-path" :title="detail.path">{{ detail.path }}</span>
             </div>
             <t-space align="center" :size="8">
-              <!-- 启用 / 停用：状态写进主文档顶部的 front matter -->
+              <!-- 启用 / 停用：只作用于「当前正在查看的文件」，状态写进这个文件的 front matter -->
               <span class="asset-panel__enabled">
                 <t-tooltip :content="enabledTip">
                   <t-switch
                     v-model="enabledValue"
                     size="small"
+                    data-testid="asset-enabled-switch"
                     :loading="enabledLoading"
                     :disabled="isEditing || isPolishing"
                     @change="handleToggleEnabled"
@@ -121,6 +122,11 @@
                 >
                   {{ enabledValue ? $t('agentAdmin.enabledOn') : $t('agentAdmin.enabledOff') }}
                 </span>
+                <span
+                  v-if="activeFile"
+                  class="asset-panel__enabled-file"
+                  data-testid="asset-enabled-file"
+                >{{ $t('agentAdmin.enabledFile', { file: activeFile }) }}</span>
               </span>
               <!-- AI 润色：同步接口，只处理当前正在查看的文件，耗时较长 -->
               <t-button
@@ -165,7 +171,26 @@
             <div class="asset-panel__tree">
               <div class="asset-panel__tree-head">
                 <span>{{ $t('agentAdmin.filesTitle') }}</span>
-                <span class="asset-panel__muted">{{ $t('agentAdmin.fileCount', { count: detail.files.length }) }}</span>
+                <t-space align="center" :size="4">
+                  <span class="asset-panel__muted">{{ $t('agentAdmin.fileCount', { count: detail.files.length }) }}</span>
+                  <!-- 新建位置 = 当前选中的目录（选中文件时用它的父目录；都没选就是条目根目录） -->
+                  <t-button
+                    size="small"
+                    variant="text"
+                    data-testid="asset-node-create-dir"
+                    @click="openNodeDialog('dir')"
+                  >
+                    {{ $t('agentAdmin.nodeCreateDir') }}
+                  </t-button>
+                  <t-button
+                    size="small"
+                    variant="text"
+                    data-testid="asset-node-create-file"
+                    @click="openNodeDialog('file')"
+                  >
+                    {{ $t('agentAdmin.nodeCreateFile') }}
+                  </t-button>
+                </t-space>
               </div>
               <div class="asset-panel__tree-body">
                 <div
@@ -174,10 +199,14 @@
                   class="asset-panel__node"
                   :class="{
                     'asset-panel__node--active': !row.isDir && row.path === activeFile,
-                    'asset-panel__node--dir': row.isDir
+                    'asset-panel__node--dir': row.isDir,
+                    'asset-panel__node--off': !row.isDir && row.enabled === false
                   }"
                   :style="{ paddingLeft: `${8 + row.depth * 14}px` }"
                   :title="row.path"
+                  :data-testid="row.isDir ? 'asset-node-dir' : 'asset-node-file'"
+                  :data-node-path="row.path"
+                  :data-node-enabled="row.isDir ? '' : String(row.enabled)"
                   @click="handleSelectFile(row)"
                 >
                   <component
@@ -185,6 +214,18 @@
                     class="asset-panel__node-icon"
                   />
                   <span class="asset-panel__node-name">{{ row.name }}</span>
+                  <!-- 目录：这一支下面有被停用的文件时给一个弱提示（不做成列表级的红标） -->
+                  <span
+                    v-if="row.isDir && row.disabledCount"
+                    class="asset-panel__node-hint"
+                    data-testid="asset-node-dir-hint"
+                  >{{ $t('agentAdmin.nodeDirDisabledTag', { count: row.disabledCount }) }}</span>
+                  <!-- 文件：停用的整体降透明度 + 一枚小标记，谁被停了一眼可见 -->
+                  <span
+                    v-else-if="!row.isDir && row.enabled === false"
+                    class="asset-panel__node-tag"
+                    data-testid="asset-node-off-tag"
+                  >{{ $t('agentAdmin.fileDisabledTag') }}</span>
                   <span v-if="!row.isDir" class="asset-panel__node-size">{{ formatBytes(row.size) }}</span>
                 </div>
 
@@ -267,6 +308,34 @@
       <div class="asset-panel__dialog-tip">{{ $t('agentAdmin.createTip', { doc: docNameOfKind }) }}</div>
     </div>
   </t-dialog>
+
+  <!-- 新建目录 / 文件弹窗：创建位置 = 当前选中的目录 -->
+  <t-dialog
+    v-model:visible="nodeVisible"
+    placement="center"
+    :header="nodeForm.nodeType === 'dir' ? $t('agentAdmin.nodeCreateDirTitle') : $t('agentAdmin.nodeCreateFileTitle')"
+    :confirm-btn="{ content: $t('agentAdmin.create'), loading: nodeCreating }"
+    :cancel-btn="{ content: $t('common.cancel') }"
+    :close-on-overlay-click="false"
+    @confirm="handleCreateNode"
+  >
+    <div class="asset-panel__dialog">
+      <div class="asset-panel__dialog-item">
+        <span class="asset-panel__dialog-label">{{ $t('agentAdmin.nodeNameLabel') }}</span>
+        <t-input
+          v-model="nodeForm.nodeName"
+          data-testid="asset-node-name-input"
+          :placeholder="nodeForm.nodeType === 'dir'
+            ? $t('agentAdmin.nodeNamePlaceholderDir')
+            : $t('agentAdmin.nodeNamePlaceholderFile')"
+          @enter="handleCreateNode"
+        />
+      </div>
+      <div class="asset-panel__dialog-tip" data-testid="asset-node-parent-tip">
+        {{ nodeForm.parent ? $t('agentAdmin.nodeParentTip', { parent: `${nodeForm.parent}/` }) : $t('agentAdmin.nodeRootTip') }}
+      </div>
+    </div>
+  </t-dialog>
 </template>
 
 <script lang="ts">
@@ -318,6 +387,12 @@ const { t } = useI18n()
 /** 名称白名单：与后端 agent-admin.service 保持一致 */
 const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 
+/** 文件名的后缀白名单（没有后缀时自动补 .md） */
+const FILE_EXT_PATTERN = /\.(md|markdown|txt|json|ya?ml|ts|js|mjs|cjs|py|sh|ps1|vue|html|css|scss)$/i
+
+/** 新建文件时没有后缀就补的默认后缀 */
+const DEFAULT_FILE_EXT = '.md'
+
 /** 详情接口单文件内容上限：超过会被后端截断，此时不允许保存，避免用截断内容覆盖原文件 */
 const CONTENT_BYTES_LIMIT = 200 * 1024
 
@@ -345,6 +420,10 @@ interface TreeRow {
   editable: boolean
   depth: number
   expanded: boolean
+  /** 文件的启用状态：true 启用 / false 停用 / null 未知（还没看过这个文件） */
+  enabled: boolean | null
+  /** 目录：这一支下面已知被停用的文件数（0 = 没有或未知） */
+  disabledCount: number
 }
 
 // 页面打开时
@@ -397,12 +476,25 @@ const createVisible = ref(false)
 const creating = ref(false)
 // 新建表单
 const createForm = ref({ name: '', title: '' })
-// 当前条目的启用状态（详情头部开关的初值与回滚依据）
+// 当前条目的启用状态（详情头部开关的初值与回滚依据，跟随当前查看的文件）
 const enabledValue = ref(true)
+// 每个文件的启用状态缓存：详情接口只返回「当前文件」的 enabled，看过的文件记下来，
+// 没看过的显示为未知（不猜），避免把「没数据」误报成「已停用」
+const fileEnabledMap = ref<Record<string, boolean>>({})
 // 启用 / 停用请求中
 const enabledLoading = ref(false)
 // AI 润色中（同步接口，可能几十秒）
 const isPolishing = ref(false)
+// 新建目录 / 文件弹窗
+const nodeVisible = ref(false)
+// 新建目录 / 文件中
+const nodeCreating = ref(false)
+// 新建表单：nodeType = dir / file，parent = 条目内相对目录（'' = 条目根目录）
+const nodeForm = ref<{ nodeType: 'dir' | 'file'; parent: string; nodeName: string }>({
+  nodeType: 'file',
+  parent: '',
+  nodeName: ''
+})
 
 /**
  * Computed Setting
@@ -461,6 +553,21 @@ const isDirty = computed(() => isEditing.value && editContent.value !== fileCont
 /** 文件树 */
 const fileTree = computed<TreeNode[]>(() => buildTree(detail.value?.files || []))
 
+/** 某个文件是否已知被停用（只有真的看过它才返回 true / false，否则 null = 未知） */
+function fileEnabledState(path: string): boolean | null {
+  if (path === activeFile.value) return enabledValue.value
+  const known = fileEnabledMap.value[path]
+  return typeof known === 'boolean' ? known : null
+}
+
+/** 目录下已知被停用的文件数（未知的不计入，避免误报） */
+function countDisabledFiles(path: string): number {
+  const prefix = `${path}/`
+  return Object.entries(fileEnabledMap.value).filter(
+    ([key, enabled]) => enabled === false && key.startsWith(prefix)
+  ).length
+}
+
 /** 文件树展开后的行 */
 const fileRows = computed<TreeRow[]>(() => {
   const rows: TreeRow[] = []
@@ -476,7 +583,9 @@ const fileRows = computed<TreeRow[]>(() => {
         updatedAt: node.updatedAt,
         editable: node.editable,
         depth,
-        expanded
+        expanded,
+        enabled: node.isDir ? null : fileEnabledState(node.path),
+        disabledCount: node.isDir ? countDisabledFiles(node.path) : 0
       })
       if (node.isDir && expanded) walk(node.children, depth + 1)
     })
@@ -512,11 +621,12 @@ const displayContent = computed(() => {
   return fileContent.value || t('agentAdmin.emptyContent')
 })
 
-/** 启用开关的悬浮提示：说明点了会发生什么，或为什么点不了 */
+/** 启用开关的悬浮提示：说明点了会发生什么（只改当前文件），或为什么点不了 */
 const enabledTip = computed(() => {
   if (isEditing.value) return t('agentAdmin.enabledEditingTip')
   if (isPolishing.value) return t('agentAdmin.enabledPolishingTip')
-  return enabledValue.value ? t('agentAdmin.disableAction') : t('agentAdmin.enableAction')
+  const file = activeFile.value || detail.value?.docName || ''
+  return t('agentAdmin.enabledFileTip', { file: file || '-' })
 })
 
 /**
@@ -633,6 +743,14 @@ function buildTree(files: AssetFile[]): TreeNode[] {
 
   files.forEach((file) => {
     const segments = String(file.path || '').split('/').filter(Boolean)
+    if (!segments.length) return
+
+    // 目录本身（后端把目录也列进 files 时，editable=false 的目录项走到这里）
+    if (segments.length === 1 && !file.editable && !String(file.name || '').includes('.')) {
+      ensureDir(segments)
+      return
+    }
+
     const fileName = segments.pop()
     if (!fileName) return
 
@@ -738,8 +856,9 @@ async function loadList(autoSelect = false) {
  * 获取条目详情（主文档 + 文件清单），并默认展示主文档
  * @param name 条目名称
  * @param keepFile 是否保留当前正在查看的文件（润色 / 启用后刷新内容时用，避免跳回主文档）
+ * @param keepDirs 是否保留目录展开状态（新建节点后刷新时用，保证新节点可见）
  */
-async function loadDetail(name: string, keepFile = false) {
+async function loadDetail(name: string, keepFile = false, keepDirs = false) {
   detailLoading.value = true
   try {
     const res = await props.api.getAssetDetail(name)
@@ -757,13 +876,15 @@ async function loadDetail(name: string, keepFile = false) {
     const kept = keepFile && previous && files.some((file) => file.path === previous) ? previous : ''
 
     detail.value = data
-    // 启用状态恒定看主文档
-    enabledValue.value = data.enabled !== false
+    // detail.enabled 是后端按「本次请求的那个文件」算出来的：不带 file 时就是主文档
+    rememberFileEnabled(data.file || data.docName, data.enabled !== false)
     docContent.value = String(data.content ?? '')
     fileContent.value = ''
     contentState.value = 'ok'
-    collapsedDirs.value = new Set()
+    if (!keepDirs) collapsedDirs.value = new Set()
     activeFile.value = kept || target?.path || ''
+    // 开关跟随当前正在查看的文件
+    enabledValue.value = fileEnabledState(activeFile.value) !== false
 
     if (activeFile.value) await loadFileContent(activeFile.value)
   } catch {
@@ -771,6 +892,13 @@ async function loadDetail(name: string, keepFile = false) {
   } finally {
     detailLoading.value = false
   }
+}
+
+/** 记下一个文件的启用状态（详情接口一次只返回一个文件的状态） */
+function rememberFileEnabled(path: string, enabled: boolean) {
+  const key = String(path || '').trim()
+  if (!key) return
+  fileEnabledMap.value = { ...fileEnabledMap.value, [key]: enabled }
 }
 
 /**
@@ -801,6 +929,10 @@ async function loadFileContent(path: string) {
     const data = res.data as AssetDetail
     const content = String(data.content ?? '')
     const target = (data.files || []).find((file) => file.path === path)
+
+    // 详情接口同时返回「这个文件」的启用状态，顺手记下来供文件树标记使用
+    rememberFileEnabled(data.file || path, data.enabled !== false)
+    if (path === activeFile.value) enabledValue.value = data.enabled !== false
 
     fileContent.value = content
     contentState.value = resolveContentState(content, target, String(data.file ?? ''), path)
@@ -905,17 +1037,19 @@ async function handleSave() {
 
 /**
  * Set Enabled
- * 启用 / 停用条目：把状态写进主文档顶部的 front matter，失败时把开关回滚到原状态
+ * 启用 / 停用「当前正在查看的文件」：状态写进该文件顶部的 front matter，
+ * 失败时把开关回滚到原状态，成功后再刷新当前文件详情与列表（列表仍是主文档状态）
  * @param value 开关切换后的新状态（t-switch 默认是布尔值）
  */
 async function handleToggleEnabled(value: string | number | boolean) {
   const current = detail.value
   if (!current || enabledLoading.value) return
 
+  const file = activeFile.value || current.file || current.docName
   const target = value === true
   enabledLoading.value = true
   try {
-    const res = await props.api.setAssetEnabled({ name: current.name, enabled: target })
+    const res = await props.api.setAssetEnabled({ name: current.name, enabled: target, file })
     if (res.code !== 2000) {
       // 失败：回滚开关，别让界面显示一个并没有生效的状态
       enabledValue.value = !target
@@ -925,10 +1059,11 @@ async function handleToggleEnabled(value: string | number | boolean) {
 
     const enabled = res.data?.enabled !== false
     enabledValue.value = enabled
+    rememberFileEnabled(file, enabled)
     MessagePlugin.success(t(enabled ? 'agentAdmin.enableSuccess' : 'agentAdmin.disableSuccess'))
-    // 列表上的停用标记要跟着变
+    // 列表上的停用标记要跟着变（列表项表示主文档状态）
     await loadList()
-    // 主文档被写入了 front matter，内容同步刷新；编辑中则跳过，避免覆盖未保存的修改
+    // 当前文件被写入了 front matter，内容同步刷新并保留当前文件；编辑中则跳过，避免覆盖未保存的修改
     if (!isEditing.value && activeName.value === current.name) await loadDetail(current.name, true)
   } catch {
     enabledValue.value = !target
@@ -1024,6 +1159,81 @@ async function handleCreate() {
     MessagePlugin.error(t('agentAdmin.createRetry'))
   } finally {
     creating.value = false
+  }
+}
+
+/**
+ * Create Node
+ * 在条目目录里新建目录 / 文件：位置 = 当前选中的目录（选中文件用它的父目录；都没选就是条目根目录）
+ */
+
+/** 当前选中的目录：选中目录就用它，选中文件就用它的父目录，都没选就是条目根目录 */
+const currentNodeParent = computed(() => {
+  const path = activeFile.value
+  if (!path) return ''
+  const meta = activeFileMeta.value
+  if (!meta && detail.value && path === detail.value.docName) return ''
+  // 文件一定在文件清单里；不在清单里说明是目录路径
+  if (meta) {
+    const index = path.lastIndexOf('/')
+    return index > 0 ? path.slice(0, index) : ''
+  }
+  return path
+})
+
+/** 打开新建弹窗（先记下创建位置，避免弹窗打开后界面切换导致位置变化） */
+function openNodeDialog(nodeType: 'dir' | 'file') {
+  if (!detail.value) return
+  nodeForm.value = { nodeType, parent: currentNodeParent.value, nodeName: '' }
+  nodeVisible.value = true
+}
+
+/** 把名称补成合法文件名：没有后缀时补 .md */
+function normalizeNodeName(nodeType: 'dir' | 'file', raw: string): string {
+  const name = raw.trim()
+  if (nodeType === 'dir') return name
+  if (!name || name.endsWith('.')) return name
+  return FILE_EXT_PATTERN.test(name) ? name : `${name}${DEFAULT_FILE_EXT}`
+}
+
+/** 新建目录 / 文件：校验名称后调接口，成功后刷新详情并选中 / 展开新节点 */
+async function handleCreateNode() {
+  const current = detail.value
+  if (!current) return
+
+  const { nodeType, parent } = nodeForm.value
+  const nodeName = normalizeNodeName(nodeType, nodeForm.value.nodeName)
+  if (!nodeName) {
+    MessagePlugin.error(t('agentAdmin.nodeNameRequired'))
+    return
+  }
+  if (!NAME_PATTERN.test(nodeName) || nodeName.includes('..')) {
+    MessagePlugin.error(t('agentAdmin.nodeNameInvalid'))
+    return
+  }
+
+  nodeCreating.value = true
+  try {
+    const res = await props.api.createAssetNode({ name: current.name, parent, nodeType, nodeName })
+    if (res.code === 2000) {
+      const created = String(res.data?.path || (parent ? `${parent}/${nodeName}` : nodeName))
+      MessagePlugin.success(t('agentAdmin.nodeCreateSuccess', { path: created }))
+      nodeVisible.value = false
+      // 新节点要看得见：目录保持展开、新文件选中
+      await loadDetail(current.name, false, true)
+      if (nodeType === 'file') await switchFile(created)
+      else {
+        const next = new Set(collapsedDirs.value)
+        next.delete(created)
+        collapsedDirs.value = next
+      }
+    } else {
+      MessagePlugin.error(res.message ?? res.msg ?? t('agentAdmin.nodeCreateFailed'))
+    }
+  } catch {
+    MessagePlugin.error(t('agentAdmin.nodeCreateRetry'))
+  } finally {
+    nodeCreating.value = false
   }
 }
 

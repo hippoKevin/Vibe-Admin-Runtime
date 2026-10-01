@@ -242,6 +242,17 @@
     }
   }
 
+  /* 开关作用在哪个文件上：跟当前查看的文件走，写在开关旁边避免误解 */
+  &__enabled-file {
+    max-width: 200px;
+    overflow: hidden;
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-size: calc(11px * var(--app-font-scale, 1));
+    color: var(--td-text-color-placeholder);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   &__detail-body {
     display: flex;
     flex: 1;
@@ -284,6 +295,33 @@
     &--dir {
       color: var(--td-text-color-secondary);
     }
+
+    /* 停用的文件：整体降透明度 + 一枚小标记，一眼看得见哪个文件被停用 */
+    &--off {
+      opacity: 0.6;
+
+      .asset-panel__node-name {
+        text-decoration: line-through;
+      }
+    }
+  }
+
+  &__node-tag {
+    flex-shrink: 0;
+    padding: 0 4px;
+    border: 1px solid var(--td-warning-color);
+    border-radius: 3px;
+    color: var(--td-warning-color);
+    font-size: calc(10px * var(--app-font-scale, 1));
+    line-height: 1.5;
+  }
+
+  /* 目录：这一支下面有停用文件的弱提示，不做成醒目的红标 */
+  &__node-hint {
+    flex-shrink: 0;
+    margin-left: auto;
+    color: var(--td-text-color-placeholder);
+    font-size: calc(10px * var(--app-font-scale, 1));
   }
 
   &__node-icon {
@@ -292,6 +330,8 @@
   }
 
   &__node-name {
+    flex: 1 1 auto;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

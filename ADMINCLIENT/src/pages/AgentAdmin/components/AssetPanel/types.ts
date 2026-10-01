@@ -68,7 +68,7 @@ export interface AssetDetail {
   /** 文件内容 */
   content: string
   files: AssetFile[]
-  /** 是否启用（恒定看主文档，与当前查看的文件无关） */
+  /** 是否启用：传了 file 时表示「该文件」的启用状态，不传时表示主文档的 */
   enabled: boolean
 }
 
@@ -106,8 +106,20 @@ export interface AssetApi {
   createAsset: (data: { name: string; title?: string }) => Promise<any>
   /** 删除条目 */
   removeAsset: (name: string) => Promise<any>
-  /** 启用 / 停用条目（写进主文档顶部 front matter） */
-  setAssetEnabled: (data: { name: string; enabled: boolean }) => Promise<any>
+  /** 启用 / 停用：传了 file 只改这个文件，否则改主文档（写进文件顶部 front matter） */
+  setAssetEnabled: (data: { name: string; enabled: boolean; file?: string }) => Promise<any>
+  /**
+   * 在条目目录里新建目录 / 文件
+   *
+   * parent 为条目内相对目录（'' 或省略 = 条目根目录），
+   * nodeType 为 dir / file（文件名没有后缀时后端会补 .md）。
+   */
+  createAssetNode: (data: {
+    name: string
+    parent?: string
+    nodeType: 'dir' | 'file'
+    nodeName: string
+  }) => Promise<any>
   /** AI 润色条目内的某个文件（file 为条目内相对路径，不传润色主文档；同步接口，耗时较长） */
   polishAsset: (data: { name: string; file?: string }) => Promise<any>
 }

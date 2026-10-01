@@ -4,21 +4,24 @@
   position: fixed;
   inset: 0;
   z-index: 1000;
-  /* 幕布本体不接收鼠标事件：页面其余区域照常可点（用户还要看主页面被改的结果） */
-  pointer-events: none;
+  /* 幕布本体接收鼠标事件：系统页面透过来看得见，但点击落在幕布上、点不动；
+     控制台自己的球体 / 输入区 / 面板 z-index 更高，照常可点（见下） */
+  pointer-events: auto;
   color: var(--td-text-color-primary, #1b2431);
   font-size: calc(13px * var(--app-font-scale, 1));
 }
 
-/* 淡淡的幕布：整屏只压一层极浅的白，底下的系统页面照常看得清、读得懂、点得到
+/* 淡淡的幕布：整屏只压一层极浅的白，底下的系统页面照常看得清、读得懂，
+   但鼠标事件被这一层吃掉 —— 开发模式下"能看见系统，不能点系统"。
    浓度由 --veil-alpha 控制（0 = 完全透明，1 = 全白遮死），面板头部的
    「幕布浓度」滑块实时改写它并持久化，默认 18%。
    刻意不用 backdrop-filter：模糊会把系统页面糊掉，等于看不见系统。 */
 .dev-mode__veil {
   position: fixed;
   inset: 0;
+  z-index: 1;
   background: rgba(255, 255, 255, var(--veil-alpha, 0.18));
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 /* ===== 球体神经网络画布（整屏、不接收鼠标事件） ===== */
@@ -114,8 +117,8 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
-  /* 只有具体控件接收鼠标事件，空白处的点击会穿透到系统页面 */
-  pointer-events: none;
+  /* 幕布已经吃掉了下层的点击，这里整层可以直接接收事件（控件照常可点） */
+  pointer-events: auto;
 }
 
 .dev-mode__topbar {
@@ -124,9 +127,8 @@
   align-items: center;
   gap: calc(8px * var(--app-font-scale, 1));
   padding: calc(10px * var(--app-font-scale, 1)) calc(14px * var(--app-font-scale, 1)) calc(6px * var(--app-font-scale, 1));
-  /* 顶栏这一条横穿整屏：只有「退出」按钮接收鼠标事件，品牌/状态文字一律穿透，
-     否则会把系统页面自己的顶栏（搜索框等）挡住 */
-  pointer-events: none;
+  /* 顶栏整条属于控制台：空白处的点击也不该落到系统页面上（幕布已经拦住下层） */
+  pointer-events: auto;
 }
 
 .dev-mode__brand {
@@ -661,100 +663,324 @@
 }
 
 .dev-mode__panel-body {
-  overflow: auto;
+  display: flex;
+  overflow: hidden;
   flex: 1 1 auto;
   min-height: 0;
+  gap: calc(10px * var(--app-font-scale, 1));
   padding: calc(8px * var(--app-font-scale, 1)) calc(10px * var(--app-font-scale, 1)) calc(10px * var(--app-font-scale, 1));
   font-size: calc(11px * var(--app-font-scale, 1));
 }
 
-.dev-mode__section {
-  margin-top: calc(10px * var(--app-font-scale, 1));
+/* ===== 左侧：模式 / 会话 / 当前模型（只读） ===== */
+.dev-mode__side {
+  display: flex;
+  overflow: auto;
+  flex: 0 0 210px;
+  flex-direction: column;
+  min-height: 0;
+  gap: calc(10px * var(--app-font-scale, 1));
+  padding-right: calc(10px * var(--app-font-scale, 1));
+  border-right: 1px solid var(--td-component-stroke, rgba(27, 36, 49, 0.12));
 }
 
-.dev-mode__section:first-child {
-  margin-top: 0;
+.dev-mode__side-block {
+  display: flex;
+  flex-direction: column;
+  gap: calc(4px * var(--app-font-scale, 1));
+  min-width: 0;
 }
 
-.dev-mode__section-title {
-  margin-bottom: calc(4px * var(--app-font-scale, 1));
+.dev-mode__side-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(6px * var(--app-font-scale, 1));
   color: var(--td-text-color-secondary, #5a6880);
   font-size: calc(10px * var(--app-font-scale, 1));
   letter-spacing: 0.06em;
 }
 
-.dev-mode__kv {
-  display: flex;
-  gap: calc(6px * var(--app-font-scale, 1));
-  margin-bottom: calc(3px * var(--app-font-scale, 1));
-  color: var(--td-text-color-primary, #1b2431);
+/* 只读展示：模型跟着 DSH profile 配置走，旁边用问号说明去哪儿改 */
+.dev-mode__model {
+  overflow: hidden;
+  color: var(--td-brand-color, #3b5bff);
+  font-family: consolas, menlo, monaco, "courier new", monospace;
+  font-size: calc(11px * var(--app-font-scale, 1));
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.dev-mode__kv-key {
+.dev-mode__side-muted {
+  color: var(--td-text-color-placeholder, #8b97ab);
+  font-size: calc(10px * var(--app-font-scale, 1));
+  line-height: 1.5;
+}
+
+.dev-mode__side-mono {
+  overflow: hidden;
+  color: var(--td-text-color-primary, #1b2431);
+  font-family: consolas, menlo, monaco, "courier new", monospace;
+  font-size: calc(11px * var(--app-font-scale, 1));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dev-mode__help {
+  flex: 0 0 auto;
+  color: var(--td-text-color-placeholder, #8b97ab);
+  font-size: calc(12px * var(--app-font-scale, 1));
+  cursor: help;
+}
+
+/* 模式下拉框：原生 select，避免额外的浮层层级问题 */
+.dev-mode__select {
+  width: 100%;
+  height: calc(26px * var(--app-font-scale, 1));
+  padding: 0 calc(6px * var(--app-font-scale, 1));
+  border: 1px solid var(--td-component-stroke, rgba(27, 36, 49, 0.12));
+  border-radius: calc(6px * var(--app-font-scale, 1));
+  outline: none;
+  background: var(--td-bg-color-container, #fff);
+  color: var(--td-text-color-primary, #1b2431);
+  font-family: inherit;
+  font-size: calc(11px * var(--app-font-scale, 1));
+}
+
+.dev-mode__select:focus {
+  border-color: var(--td-brand-color, #3b5bff);
+}
+
+/* 面板里的文字按钮（新对话 / 展开全文） */
+.dev-mode__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--td-brand-color, #3b5bff);
+  font-family: inherit;
+  font-size: calc(10px * var(--app-font-scale, 1));
+  cursor: pointer;
+}
+
+.dev-mode__link:hover {
+  text-decoration: underline;
+}
+
+/* ===== 右侧：对话 + 轨迹 ===== */
+.dev-mode__chat {
+  display: flex;
+  overflow: auto;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  gap: calc(8px * var(--app-font-scale, 1));
+}
+
+.dev-mode__chat-title {
   flex: 0 0 auto;
   color: var(--td-text-color-secondary, #5a6880);
+  font-size: calc(10px * var(--app-font-scale, 1));
+  letter-spacing: 0.06em;
 }
 
-.dev-mode__kv-val {
-  min-width: 0;
-  word-break: break-word;
-}
-
-.dev-mode__pre {
-  overflow: auto;
-  max-height: calc(132px * var(--app-font-scale, 1));
-  margin: 0;
+.dev-mode__conv {
+  display: flex;
+  flex-direction: column;
+  gap: calc(6px * var(--app-font-scale, 1));
   padding: calc(6px * var(--app-font-scale, 1)) calc(8px * var(--app-font-scale, 1));
   border: 1px solid var(--td-component-stroke, rgba(27, 36, 49, 0.12));
   border-radius: calc(8px * var(--app-font-scale, 1));
-  background: var(--td-bg-color-secondarycontainer, rgba(246, 248, 252, 0.72));
+}
+
+.dev-mode__conv-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: calc(8px * var(--app-font-scale, 1));
+  min-width: 0;
+}
+
+.dev-mode__conv-name {
+  overflow: hidden;
   color: var(--td-text-color-primary, #1b2431);
+  font-size: calc(11px * var(--app-font-scale, 1));
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dev-mode__conv-meta {
+  flex: 0 0 auto;
+  color: var(--td-text-color-placeholder, #8b97ab);
   font-family: consolas, menlo, monaco, "courier new", monospace;
   font-size: calc(10px * var(--app-font-scale, 1));
-  line-height: 1.5;
+}
+
+.dev-mode__turn {
+  display: flex;
+  flex-direction: column;
+  gap: calc(4px * var(--app-font-scale, 1));
+  padding-top: calc(4px * var(--app-font-scale, 1));
+  border-top: 1px dashed var(--td-component-stroke, rgba(27, 36, 49, 0.12));
+}
+
+.dev-mode__turn:first-of-type {
+  border-top: 0;
+}
+
+/* 对话气泡：我（指令）靠左用浅灰，Agent（答复）用白底 + 品牌色左边线 */
+.dev-mode__bubble {
+  display: flex;
+  gap: calc(6px * var(--app-font-scale, 1));
+  padding: calc(4px * var(--app-font-scale, 1)) calc(8px * var(--app-font-scale, 1));
+  border-left: 2px solid var(--td-brand-color, #3b5bff);
+  border-radius: calc(6px * var(--app-font-scale, 1));
+  background: var(--td-bg-color-container, #fff);
+  line-height: 1.55;
+}
+
+.dev-mode__bubble--me {
+  border-left-color: var(--td-text-color-placeholder, #8b97ab);
+  background: var(--td-bg-color-secondarycontainer, rgba(246, 248, 252, 0.9));
+}
+
+.dev-mode__bubble--error {
+  border-left-color: var(--td-error-color, #d4380d);
+}
+
+.dev-mode__bubble-who {
+  flex: 0 0 auto;
+  color: var(--td-text-color-secondary, #5a6880);
+  font-size: calc(10px * var(--app-font-scale, 1));
+  white-space: nowrap;
+}
+
+.dev-mode__bubble-text {
+  min-width: 0;
+  color: var(--td-text-color-primary, #1b2431);
+  font-size: calc(11px * var(--app-font-scale, 1));
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-.dev-mode__history {
+.dev-mode__turn-meta {
   display: flex;
-  flex-direction: column;
-  gap: calc(2px * var(--app-font-scale, 1));
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  flex-wrap: wrap;
+  gap: calc(8px * var(--app-font-scale, 1));
+  color: var(--td-text-color-placeholder, #8b97ab);
+  font-size: calc(10px * var(--app-font-scale, 1));
 }
 
-.dev-mode__history-item {
+.dev-mode__meta--error {
+  color: var(--td-error-color, #d4380d);
+}
+
+.dev-mode__running {
+  color: var(--td-brand-color, #3b5bff);
+}
+
+/* ===== 轨迹：DSH run events 的步骤流 ===== */
+.dev-mode__trace {
   display: flex;
+  flex-direction: column;
+  gap: calc(4px * var(--app-font-scale, 1));
+}
+
+.dev-mode__trace-toggle {
+  display: flex;
+  align-self: flex-start;
   align-items: center;
-  gap: calc(6px * var(--app-font-scale, 1));
-  padding: calc(3px * var(--app-font-scale, 1)) calc(6px * var(--app-font-scale, 1));
-  border: 1px solid transparent;
-  border-radius: calc(8px * var(--app-font-scale, 1));
+  gap: calc(4px * var(--app-font-scale, 1));
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--td-text-color-secondary, #5a6880);
+  font-family: inherit;
+  font-size: calc(10px * var(--app-font-scale, 1));
   cursor: pointer;
 }
 
-.dev-mode__history-item:hover {
-  border-color: var(--td-component-stroke, rgba(27, 36, 49, 0.12));
-  color: var(--td-text-color-primary, #1b2431);
+.dev-mode__trace-toggle:hover {
+  color: var(--td-brand-color, #3b5bff);
 }
 
-.dev-mode__history-item--active {
-  border-color: var(--td-brand-color, #3b5bff);
+.dev-mode__trace-body {
+  display: flex;
+  flex-direction: column;
+  gap: calc(2px * var(--app-font-scale, 1));
+  max-height: calc(280px * var(--app-font-scale, 1));
+  overflow: auto;
+  padding: calc(6px * var(--app-font-scale, 1)) calc(8px * var(--app-font-scale, 1));
+  border-radius: calc(6px * var(--app-font-scale, 1));
+  background: var(--td-bg-color-secondarycontainer, rgba(246, 248, 252, 0.72));
+}
+
+.dev-mode__step {
+  display: flex;
+  align-items: flex-start;
+  gap: calc(6px * var(--app-font-scale, 1));
+  line-height: 1.5;
+}
+
+.dev-mode__step-icon {
+  flex: 0 0 calc(14px * var(--app-font-scale, 1));
+  color: var(--td-text-color-placeholder, #8b97ab);
+  text-align: center;
+}
+
+.dev-mode__step-label {
+  flex: 0 0 auto;
+  max-width: calc(120px * var(--app-font-scale, 1));
+  overflow: hidden;
+  color: var(--td-text-color-secondary, #5a6880);
+  font-size: calc(10px * var(--app-font-scale, 1));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dev-mode__step-text {
+  min-width: 0;
+  color: var(--td-text-color-primary, #1b2431);
+  font-size: calc(10px * var(--app-font-scale, 1));
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 步骤类型一眼可分：思考 / 工具 / 文本 / 最终答复各一种颜色 */
+.dev-mode__step--thinking .dev-mode__step-icon {
+  color: var(--td-warning-color, #d98200);
+}
+
+.dev-mode__step--tool .dev-mode__step-icon {
+  color: #7b5cff;
+}
+
+.dev-mode__step--text .dev-mode__step-icon {
+  color: var(--td-text-color-secondary, #5a6880);
+}
+
+.dev-mode__step--final .dev-mode__step-icon {
+  color: var(--td-success-color, #12a150);
+}
+
+.dev-mode__step--session .dev-mode__step-icon {
   color: var(--td-brand-color, #3b5bff);
+}
+
+.dev-mode__step--final .dev-mode__step-text {
+  font-weight: 600;
+}
+
+/* 面板头部右侧的「最近 N 次运行」 */
+.dev-mode__panel-runs {
+  flex: 0 0 auto;
+  color: var(--td-text-color-placeholder, #8b97ab);
+  font-size: calc(10px * var(--app-font-scale, 1));
+  white-space: nowrap;
 }
 
 .dev-mode__mono {
   flex: 0 0 auto;
   font-family: consolas, menlo, monaco, "courier new", monospace;
-}
-
-.dev-mode__history-prompt {
-  overflow: hidden;
-  flex: 1 1 auto;
-  min-width: 0;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }

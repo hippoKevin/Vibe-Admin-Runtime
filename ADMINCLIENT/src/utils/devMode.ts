@@ -36,8 +36,17 @@ export const DEV_MODE_VEIL_ALPHA_KEY = 'dev-mode-veil-alpha'
 /** 底部输入区（音轨）位置：相对舞台底部的偏移，拖动后保持 */
 export const DEV_MODE_DOCK_KEY = 'dev-mode-dock-pos'
 
+/** DSH profile（面板上的「模式」下拉框） */
+export const DEV_MODE_PROFILE_KEY = 'dev-mode-profile'
+
+/** 当前会话 id（DSH sessionId）：带上它就是接着这条会话继续追问 */
+export const DEV_MODE_SESSION_KEY = 'dev-mode-session-id'
+
 /** 面板透明度默认值（%） */
 export const PANEL_ALPHA_DEFAULT = 86
+
+/** 默认 DSH profile：与后端 dev-agent.service 的 DEFAULT_PROFILE 保持一致 */
+export const DEV_MODE_PROFILE_DEFAULT = 'headless'
 
 /**
  * 幕布浓度默认值（%）
@@ -147,6 +156,12 @@ export const devModeChannel = ref<DevModeChannel>(readChannel(DEV_MODE_CHANNEL_K
 /** 是否语音播报（快速回复通道的答复用 TTS 念出来） */
 export const devModeSpeak = ref<boolean>(readBoolean(DEV_MODE_SPEAK_KEY, true))
 
+/** 当前 DSH profile（「模式」下拉框的选中值） */
+export const devModeProfile = ref<string>(readString(DEV_MODE_PROFILE_KEY, DEV_MODE_PROFILE_DEFAULT))
+
+/** 当前会话 id（空字符串 = 新对话，下次提交不带 sessionId） */
+export const devModeSessionId = ref<string>(readString(DEV_MODE_SESSION_KEY, ''))
+
 /** 打开开发模式（未登录时不开；持久化，刷新后自动恢复） */
 export function openDevMode() {
   if (!isDevModeAllowed()) return false
@@ -230,4 +245,18 @@ export function saveDevModeChannel(value: DevModeChannel) {
 export function saveDevModeSpeak(value: boolean) {
   devModeSpeak.value = value
   writeBoolean(DEV_MODE_SPEAK_KEY, value)
+}
+
+/** 保存当前 DSH profile（「模式」下拉框） */
+export function saveDevModeProfile(value: string) {
+  const next = String(value || '').trim() || DEV_MODE_PROFILE_DEFAULT
+  devModeProfile.value = next
+  writeString(DEV_MODE_PROFILE_KEY, next)
+}
+
+/** 保存当前会话 id（传空字符串 = 清空，开始新对话） */
+export function saveDevModeSessionId(value: string) {
+  const next = String(value || '').trim()
+  devModeSessionId.value = next
+  writeString(DEV_MODE_SESSION_KEY, next)
 }

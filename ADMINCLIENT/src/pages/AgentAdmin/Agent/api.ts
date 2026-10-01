@@ -59,10 +59,34 @@ export function removeAsset(name: string) {
     });
 }
 
-/** 启用 / 停用 Agent 条目（写进主文档 AGENT.md 顶部的 front matter） */
-export function setAssetEnabled(data: { name: string; enabled: boolean }) {
+/**
+ * 启用 / 停用（写进文件顶部的 front matter）
+ *
+ * 带 file 时只改这个文件的启用状态；不带 file 时改主文档 AGENT.md，
+ * 列表项展示的始终是主文档的状态。
+ */
+export function setAssetEnabled(data: { name: string; enabled: boolean; file?: string }) {
     return requestApi({
         url: '/hippoadmin/agent-admin/enabled',
+        method: 'post',
+        data: { kind: KIND, ...data }
+    });
+}
+
+/**
+ * 在 Agent 条目目录里新建目录 / 文件
+ *
+ * parent 为条目内相对目录（'' 或省略 = 条目根目录），
+ * nodeType 为 dir / file（文件名没有后缀时后端会补 .md）。
+ */
+export function createAssetNode(data: {
+    name: string;
+    parent?: string;
+    nodeType: 'dir' | 'file';
+    nodeName: string;
+}) {
+    return requestApi({
+        url: '/hippoadmin/agent-admin/node',
         method: 'post',
         data: { kind: KIND, ...data }
     });

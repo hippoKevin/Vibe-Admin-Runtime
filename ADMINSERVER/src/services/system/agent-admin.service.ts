@@ -45,13 +45,15 @@ export interface AssetItem {
     enabled: boolean;
 }
 
-/** 目录内文件 */
+/** 目录内节点：文件或目录 */
 export interface AssetFile {
     name: string;
     path: string;
     size: number;
     updatedAt: string;
     editable: boolean;
+    /** file = 文件（默认）/ dir = 目录。目录项让前端能把新建的空目录也显示出来 */
+    type?: 'file' | 'dir';
 }
 
 /**
@@ -446,6 +448,22 @@ export class AgentAdminService {
             const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
 
             if (entry.isDirectory()) {
+                // 目录本身也作为一项返回：否则新建的空目录不会出现在文件树里
+                let updatedAt = new Date(0).toISOString();
+                try {
+                    updatedAt = fs.statSync(full).mtime.toISOString();
+                } catch {
+                    // 拿不到时间就用 0
+                }
+
+                result.push({
+                    name: entry.name,
+                    path: relative,
+                    size: 0,
+                    updatedAt,
+                    editable: false,
+                    type: 'dir',
+                });
                 result.push(...this.listFiles(full, relative, depth + 1));
                 continue;
             }
@@ -458,6 +476,7 @@ export class AgentAdminService {
                     size: stat.size,
                     updatedAt: stat.mtime.toISOString(),
                     editable: EDITABLE_EXTENSIONS.includes(path.extname(entry.name).toLowerCase()),
+                    type: 'file',
                 });
             } catch {
                 // 单个文件读取失败就跳过，不影响整体
