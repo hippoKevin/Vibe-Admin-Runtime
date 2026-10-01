@@ -86,6 +86,15 @@
             <span class="dev-mode__speaking-dot" :class="{ 'dev-mode__speaking-dot--on': speaking }" />
             <span>{{ speaking ? $t('devMode.speaking') : (speechMuted ? $t('devMode.speakOff') : $t('devMode.speakOn')) }}</span>
           </span>
+          <!-- TTS 状态行：说明当前用哪个引擎，IndexTTS 不可用时明确显示「已回退浏览器播报」 -->
+          <span
+            v-if="channel === 'reply' && !speechMuted"
+            class="dev-mode__tts"
+            :class="{ 'dev-mode__tts--fallback': ttsStatus && !ttsStatus.ready }"
+            :title="ttsStatus?.hint || ttsHint"
+            data-testid="dev-console-tts-status"
+            :data-tts-ready="ttsStatus ? String(ttsStatus.ready) : ''"
+          >{{ ttsLabel }}</span>
         </div>
 
         <!-- 本次执行结果 -->
@@ -433,10 +442,14 @@ import {
   type DevAgentReplyResult,
   type DevAgentRunRecord,
   type DevAgentRunResult,
+  type TtsStatus,
   getDevAgentProfiles,
   getDevAgentRuns,
   getDevAgentStatus,
+  getTtsStatus,
+  fetchSpeechAudioBlobUrl,
   generateByDevAgent,
+  synthesizeSpeech,
 } from '@/api/devAgent'
 import {
   type DevModeChannel,
@@ -463,6 +476,7 @@ import {
 } from '@/utils/devMode'
 import { SphereMesh, drawWave, readLevel } from './controller/mesh'
 import { SpeechController } from './controller/speech'
+import type { SpeechEngine } from './controller/speech'
 import { VoiceInput } from './controller/voice'
 
 /**
@@ -639,6 +653,23 @@ const resultAnswer = ref('')
 const resultChannel = ref<DevModeChannel>('reply')
 /** 是否正在播报（界面上的轻微提示 + 球体轻微律动） */
 const speaking = ref(false)
+/** IndexTTS 状态（null = 还没探测到）：决定语音播报用哪个引擎 */
+const ttsStatus = ref<TtsStatus | null>(null)
+/** 本次播报实际用的引擎（探测结果之外的运行时事实） */
+const ttsEngine = ref<SpeechEngine>('none')
+/** IndexTTS 音频的 blob URL：播放的中间产物，切换/退出时必须回收，否则内存泄漏 */
+let speechBlobUrl = ''
+
+/** 回收上一个 blob URL */
+function releaseSpeechBlobUrl() {
+  if (!speechBlobUrl) return
+  try {
+    URL.revokeObjectURL(speechBlobUrl)
+  } catch {
+    /* 忽略：已经回收过或环境不支持 */
+  }
+  speechBlobUrl = ''
+}
 /** 是否已转入后台执行（「后台执行」通道提交后立刻为 true，不阻塞界面） */
 const backgroundRunning = ref(false)
 /** DSH profile（「模式」下拉框的选中值，参与提交） */
@@ -1546,6 +1577,7 @@ function switchChannel(next: DevModeChannel) {
   if (next === channel.value) return
   if (next === 'code') {
     speech?.cancel()
+    releaseSpeechBlobUrl()
     cancelAutoSend()
   }
   channel.value = next
@@ -1564,8 +1596,37 @@ function switchChannel(next: DevModeChannel) {
 function handleToggleMute() {
   speechMuted.value = !speechMuted.value
   saveDevModeSpeak(!speechMuted.value)
-  if (speechMuted.value) speech?.cancel()
+  if (speechMuted.value) {
+    speech?.cancel()
+    releaseSpeechBlobUrl()
+  }
   setHint(t(speechMuted.value ? 'devMode.speakOff' : 'devMode.speakOn'))
+}
+
+/** IndexTTS 是否可用（可达 + 有参考音色）——决定播报走哪个引擎 */
+const ttsReady = computed(() => ttsStatus.value?.ready === true)
+
+/** TTS 状态行的悬浮说明 */
+const ttsHint = computed(() =>
+  ttsStatus.value?.hint || (ttsReady.value ? t('devMode.ttsIndexReadyTip') : t('devMode.ttsBrowserTip'))
+)
+
+/** TTS 状态行文案：用哪个引擎 / 是否已回退 */
+const ttsLabel = computed(() => {
+  // 正在播报且确实走的是 IndexTTS，明确说一句
+  if (speaking.value && ttsEngine.value === 'indextts') return t('devMode.ttsIndexPlaying')
+  if (ttsReady.value) return t('devMode.ttsIndexReady')
+  return t('devMode.ttsBrowserFallback')
+})
+
+/**
+ * 探测 IndexTTS 状态
+ *
+ * 失败不提示：语音合成是可选能力，探测不到就当没有，播报自动回退浏览器引擎。
+ */
+async function loadTtsStatus() {
+  const status = await getTtsStatus()
+  if (status) ttsStatus.value = status
 }
 
 /** 念一句（静音、浏览器不支持、组件已卸载都自动跳过，只在结果卡显示文字） */
@@ -1706,6 +1767,7 @@ async function handleGenerate() {
   // 再次发送前掐掉上一段播报与待执行的自动发送，避免叠着念 / 重复提交
   cancelAutoSend()
   speech?.cancel()
+  releaseSpeechBlobUrl()
 
   // 提交时收回麦克风：避免把环境音当成新的需求
   if (mode.value === 'voice') {
@@ -1933,7 +1995,7 @@ onMounted(() => {
     },
   })
 
-  // 语音播报：不支持 speechSynthesis 的浏览器静默降级（只在结果卡显示文字）
+  // 语音播报：优先 IndexTTS（后端桥接的本机语音合成），不可达/失败时自动回退浏览器 speechSynthesis
   speech = new SpeechController(
     {
       canSpeak: () => !speechMuted.value && mounted,
@@ -1942,6 +2004,24 @@ onMounted(() => {
       },
       onEnd: () => {
         speaking.value = false
+      },
+      // 供 IndexTTS 使用：只有状态显示可用时才真的去合成，避免每次播报都白等一次超时
+      synthesize: async (text: string) => {
+        if (!ttsReady.value) return null
+        const result = await synthesizeSpeech({
+          text,
+          voice: ttsStatus.value?.defaultVoice || undefined,
+          // IndexTTS 支持 ZH/EN/JA/AR/ES，跟随界面语言
+          lang: String(locale.value || '').startsWith('en') ? 'EN' : 'ZH',
+        })
+        if (!result?.audioUrl) return null
+        // /tts/audio 需要 JWT，而 <audio src> 带不上 Authorization 头，
+        // 因此先带鉴权取回 Blob 再播（否则会静默报 MEDIA_ERR error 4）
+        const blobUrl = await fetchSpeechAudioBlobUrl(result.audioUrl)
+        releaseSpeechBlobUrl()
+        speechBlobUrl = blobUrl
+        ttsEngine.value = 'indextts'
+        return blobUrl
       },
     },
     String(locale.value || 'zh-CN'),
@@ -1956,6 +2036,8 @@ onMounted(() => {
   loadStatus()
   refreshRuns()
   loadProfiles()
+  // 语音合成的可选服务：探测一次，决定快速回复通道用哪个引擎播报
+  loadTtsStatus()
 })
 
 onBeforeUnmount(() => {
@@ -1968,6 +2050,7 @@ onBeforeUnmount(() => {
   // 卸载/退出开发模式：正在念的语音必须立刻停掉，不能留在后台
   speech?.dispose()
   speech = null
+  releaseSpeechBlobUrl()
   speaking.value = false
   if (rafId) {
     window.cancelAnimationFrame(rafId)

@@ -348,6 +348,22 @@
   }
 }
 
+/* TTS 引擎状态行：说明播报用的是 IndexTTS 还是浏览器内置；回退时用警示色提示 */
+.dev-mode__tts {
+  overflow: hidden;
+  flex: 0 0 auto;
+  max-width: 40%;
+  color: var(--td-text-color-placeholder, #8b95a7);
+  font-size: calc(10px * var(--app-font-scale, 1));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: help;
+
+  &--fallback {
+    color: var(--td-warning-color, #e37318);
+  }
+}
+
 /* ===== 底部交互区（球的正下方，也就是原来音轨的位置） ===== */
 .dev-mode__dock {
   position: relative;

@@ -98,8 +98,14 @@ const REPLY_LIMIT = 600;
 /** 简短回复通道的默认超时（比改代码短得多） */
 const REPLY_TIMEOUT = 90 * 1000;
 
-/** 同步任务（如 AI 润色单个文档）的默认超时 */
-const SYNC_TASK_TIMEOUT = 3 * 60 * 1000;
+/**
+ * 同步任务（如 AI 润色单个文档）的默认超时
+ *
+ * 润色要跑完一次完整的 Agent 循环（读文件 → 改写 → 落盘），实测比简短回复慢一个量级，
+ * 3 分钟会经常被掐断（表现就是「润色失败」）。默认放到 8 分钟，可用 DSH_POLISH_TIMEOUT 覆盖；
+ * 前端的等待时间必须比它更长，否则后端自己的错误信息传不回前端。
+ */
+const SYNC_TASK_TIMEOUT = 8 * 60 * 1000;
 
 /**
  * 开发模式服务：把一句话任务交给 DeepSeek Harness 执行
@@ -155,12 +161,25 @@ export class DevAgentService {
     /**
      * 执行历史：给独立控制台的「执行过程」面板用
      */
-    getRuns() {        return {
+    getRuns() {
+        return {
             running: this.running,
             timeout: this.resolveTimeout(),
             cwd: this.resolveCwd(),
             items: this.runs,
         };
+    }
+
+    /**
+     * 按 id 找一条执行记录（可选链安全）
+     *
+     * 前端拿 startBackgroundSyncTask 返回的 runId 轮询进度时用它。
+     * 找不到时返回 null —— 调用方应把它当成「还没登记」，继续轮询而不是报错。
+     */
+    findRun(id: string): DevAgentRunRecord | null {
+        const key = String(id || '').trim();
+        if (!key) return null;
+        return this.runs.find((item) => item.id === key) ?? null;
     }
 
     /**
@@ -381,21 +400,122 @@ export class DevAgentService {
     }
 
     /**
+     * 后台跑一次会改动文件的一次性任务（「AI 润色」这类），**立即返回**
+     *
+     * 为什么改成异步：一次润色实测要 100 秒上下，同步接口会让前端长时间空白等待，
+     * 用户以为「点了没反应」就会反复点，而并发锁又只允许一个任务 → 后续点击全部报错，
+     * 表现就是「AI 润色无法使用」。改成先返回 runId，由前端轮询 /dev-agent/runs 看进度，
+     * 既不会超时，也能把「已有一个任务正在执行」如实显示出来。
+     *
+     * 注意：这里刻意**不**复用 requireLauncher() 的并发检查 —— 那样「忙」会变成
+     * 同步抛错，接口就无法返回 runId 了。并发占用放到后台任务里判定，
+     * 让这次尝试以一条失败的运行记录呈现，前端照样能轮询到原因。
+     *
+     * @param prompt 任务描述
+     * @param runId 由调用方生成，接口先把它返回给前端用于轮询
+     * @param timeoutMs 超时
+     */
+    startBackgroundSyncTask(
+        prompt: string,
+        runId: string,
+        timeoutMs: number = this.resolveSyncTimeout(),
+        options: { profile?: string; sessionId?: string } = {},
+    ): { started: boolean; runId: string; startedAt: string } {
+        const startedAt = Date.now();
+        const startedAtIso = new Date(startedAt).toISOString();
+
+        // 先把记录放进历史，前端拿到 runId 立刻就能查到「运行中」
+        const record: DevAgentRunRecord = {
+            id: runId,
+            channel: 'code',
+            prompt,
+            startedAt: startedAtIso,
+            finishedAt: '',
+            running: true,
+            ok: false,
+            exitCode: null,
+            duration: 0,
+            output: '',
+            reasoningTail: '',
+            files: [],
+            events: [],
+        };
+        this.lastRun = record;
+        this.pushRun(record);
+
+        // 刻意不 await：立刻把 runId 交还给接口
+        void this.runSyncTaskInto(record, prompt, timeoutMs, options, startedAt);
+
+        return { started: true, runId, startedAt: startedAtIso };
+    }
+
+    /**
      * 同步跑一次会改动文件的一次性任务（「AI 润色」这类）
      *
-     * 与两个通道的区别：不等控制台聊天，而是等任务真的跑完再返回结果，
-     * 调用方（智能管理的润色按钮）拿到结果后重新拉一次文件内容即可。
+     * 保留同步语义供内部/其它调用方使用；润色接口走 startBackgroundSyncTask。
      */
     async runSyncTask(
         prompt: string,
-        timeoutMs: number = SYNC_TASK_TIMEOUT,
+        timeoutMs: number = this.resolveSyncTimeout(),
         options: { profile?: string; sessionId?: string } = {},
     ): Promise<DevAgentRunResult> {
-        const launcher = this.requireLauncher();
-        const cwd = this.resolveCwd();
+        const record: DevAgentRunRecord = {
+            id: String(Date.now()),
+            channel: 'code',
+            prompt,
+            startedAt: new Date().toISOString(),
+            finishedAt: '',
+            running: true,
+            ok: false,
+            exitCode: null,
+            duration: 0,
+            output: '',
+            reasoningTail: '',
+            files: [],
+            events: [],
+        };
+        this.lastRun = record;
+        this.pushRun(record);
+        return this.runSyncTaskInto(record, prompt, timeoutMs, options, Date.now());
+    }
 
+    /**
+     * 真正执行同步任务，并把结果写回给定的运行记录（前端轮询看到的就是它）
+     */
+    private async runSyncTaskInto(
+        record: DevAgentRunRecord,
+        prompt: string,
+        timeoutMs: number,
+        options: { profile?: string; sessionId?: string },
+        startedAt: number,
+    ): Promise<DevAgentRunResult> {
+        // 启动器缺失 / 已有任务在跑：都写进这条记录，让前端轮询到原因，而不是静默失败
+        let launcher: DshLauncher | null = null;
+        let blocked: string | null = null;
+        try {
+            launcher = this.requireLauncher();
+        } catch (error) {
+            blocked = error?.message || '无法启动执行器';
+        }
+
+        if (!launcher) {
+            const result: DevAgentRunResult = {
+                ok: false,
+                exitCode: null,
+                duration: Date.now() - startedAt,
+                output: '',
+                reasoningTail: '',
+                files: [],
+                error: blocked || '无法启动执行器',
+                finishedAt: new Date().toISOString(),
+            };
+            Object.assign(record, { ...result, running: false, events: [] });
+            this.logger.warn(`开发模式-同步任务未能启动：${result.error}`);
+            return result;
+        }
+
+        const cwd = this.resolveCwd();
         this.running = true;
-        const startedAt = Date.now();
 
         try {
             const before = await this.collectChangedFiles(cwd);
@@ -412,21 +532,26 @@ export class DevAgentService {
                 files: after.filter((item) => beforeStatus.get(item.path) !== item.status),
                 sessionId: run.sessionId,
                 finishedAt: new Date().toISOString(),
-                error: run.timedOut ? '执行超时，已被强制结束' : undefined,
+                error: run.timedOut ? '执行超时，已被强制结束' : run.errorText || undefined,
             };
 
-            this.lastRun = {
-                ...result,
-                id: String(startedAt),
-                channel: 'code',
-                prompt,
-                startedAt: new Date(startedAt).toISOString(),
-                running: false,
-                events: run.events,
-            };
-            this.pushRun({ ...this.lastRun });
+            Object.assign(record, { ...result, running: false, events: run.events });
 
             this.logger.log(`开发模式-同步任务结束：用时=${result.duration}ms 改动文件=${result.files.length}`);
+            return result;
+        } catch (error) {
+            const result: DevAgentRunResult = {
+                ok: false,
+                exitCode: null,
+                duration: Date.now() - startedAt,
+                output: '',
+                reasoningTail: '',
+                files: [],
+                error: error?.message || '执行失败',
+                finishedAt: new Date().toISOString(),
+            };
+            Object.assign(record, { ...result, running: false });
+            this.logger.warn(`开发模式-同步任务异常：${result.error}`);
             return result;
         } finally {
             this.running = false;
@@ -444,12 +569,13 @@ export class DevAgentService {
         options: { profile?: string; sessionId?: string } = {},
     ) {
         const run = await this.spawnAgent(launcher, cwd, prompt, timeout, options);
-        const { events, text, sessionId } = this.parseRunEvents(run.stdout);
+        const { events, text, sessionId, errorText } = this.parseRunEvents(run.stdout);
 
         return {
             ...run,
             events,
             sessionId,
+            errorText,
             // 最终答复优先取 final/text 事件，拿不到再退回 stdout 尾部
             answer: text || this.tail(run.stdout, STDOUT_LIMIT),
         };
@@ -460,6 +586,9 @@ export class DevAgentService {
         const events: DshRunEvent[] = [];
         let text = '';
         let sessionId: string | null = null;
+        // DSH 的失败是用 error 事件报的，进程仍可能以 0 退出：
+        // 单独留一份给调用方，才能把「为什么没改成」告诉用户
+        let errorText = '';
 
         for (const line of String(stdout || '').split(/\r?\n/)) {
             const raw = line.trim();
@@ -474,6 +603,7 @@ export class DevAgentService {
             if (!event || typeof event !== 'object' || !event.type) continue;
 
             if (event.type === 'session' && event.sessionId) sessionId = String(event.sessionId);
+            if (event.type === 'error' && typeof event.message === 'string') errorText = event.message;
             if ((event.type === 'final' || event.type === 'text') && typeof event.text === 'string') {
                 text = event.text;
             }
@@ -485,6 +615,7 @@ export class DevAgentService {
             events: events.length > MAX_EVENTS ? events.slice(events.length - MAX_EVENTS) : events,
             text: text.trim(),
             sessionId,
+            errorText,
         };
     }
 
@@ -694,6 +825,13 @@ export class DevAgentService {
         const value = Number(process.env.DSH_REPLY_TIMEOUT);
         if (!Number.isFinite(value) || value <= 0) return REPLY_TIMEOUT;
         return Math.min(Math.floor(value), 10 * 60 * 1000);
+    }
+
+    /** 同步任务（AI 润色）的超时（可用 DSH_POLISH_TIMEOUT 覆盖） */
+    private resolveSyncTimeout(): number {
+        const value = Number(process.env.DSH_POLISH_TIMEOUT);
+        if (!Number.isFinite(value) || value <= 0) return SYNC_TASK_TIMEOUT;
+        return Math.min(Math.floor(value), 30 * 60 * 1000);
     }
 
     /** 只保留末尾若干字符，避免长文本塞满页面 */

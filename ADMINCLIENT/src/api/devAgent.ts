@@ -206,3 +206,93 @@ export async function generateByDevAgent(
     }),
   )
 }
+
+/**
+ * 开发模式的语音合成（TTS）
+ *
+ * 后端把本机的 IndexTTS（Gradio WebUI）桥接成下面两个接口；
+ * 不可达时状态接口仍返回 200，只是 ready=false 并带一句中文提示，
+ * 前端据此回退到浏览器内置的 speechSynthesis。
+ */
+
+/** IndexTTS 状态：是否可达 + 参考音色清单 */
+export interface TtsStatus {
+  reachable: boolean
+  baseUrl: string
+  home: string
+  items: string[]
+  defaultVoice: string | null
+  /** 可达且有参考音色才为 true */
+  ready: boolean
+  /** 不可用时的中文提示（可直接展示给用户） */
+  hint: string | null
+}
+
+/** 语音合成结果 */
+export interface TtsSynthResult {
+  ok: boolean
+  file: string
+  /** 直接交给 new Audio() 的相对地址 */
+  audioUrl: string
+  voice: string
+  lang: string
+  /** 本次请求耗时（毫秒） */
+  duration: number
+  /** 音频本身时长（毫秒） */
+  audioMs: number
+  size: number
+  text: string
+}
+
+/** 合成超时：首次调用要加载模型，给足 3 分钟（与后端一致） */
+const TTS_TIMEOUT = 3 * 60 * 1000
+
+/** 探测 IndexTTS 状态（永远成功，不可达也是一种状态） */
+export async function getTtsStatus(): Promise<TtsStatus | null> {
+  try {
+    return unwrap<TtsStatus>(
+      await requestApi({ url: '/hippoadmin/dev-agent/tts/status', method: 'get', timeout: 15000 }),
+    )
+  } catch {
+    return null
+  }
+}
+
+/** 合成语音（text 上限 500 字；失败会被抛出，由调用方回退到浏览器播报） */
+export async function synthesizeSpeech(data: {
+  text: string
+  voice?: string
+  lang?: string
+}): Promise<TtsSynthResult> {
+  return unwrap<TtsSynthResult>(
+    await requestApi({
+      url: '/hippoadmin/dev-agent/tts',
+      method: 'post',
+      data,
+      timeout: TTS_TIMEOUT,
+    }),
+  )
+}
+
+/**
+ * 把合成音频取成 blob URL，供 <audio> 播放
+ *
+ * 为什么不直接把 audioUrl 交给 new Audio()：/tts/audio 需要 JWT 鉴权，
+ * 而 <audio src> 这类媒体加载由浏览器直接发请求、不会带 Authorization 头，
+ * 结果是 MEDIA_ERR_SRC_NOT_SUPPORTED（error code 4）静默失败。
+ * 这里用带鉴权的 fetch 把音频读成 Blob 再转 blob: URL —— 鉴权不放松。
+ *
+ * 调用方负责在用完后 URL.revokeObjectURL。
+ */
+export async function fetchSpeechAudioBlobUrl(audioUrl: string): Promise<string> {
+  const token = localStorage.getItem('token') || ''
+  // baseURL 是 /proxy，这里与其它请求走同一条代理链路
+  const res = await fetch(`/proxy${audioUrl}`, {
+    headers: token ? { Authorization: token } : {},
+  })
+  if (!res.ok) throw new Error(`取回合成音频失败（HTTP ${res.status}）`)
+
+  const blob = await res.blob()
+  if (!blob.size) throw new Error('合成音频为空')
+  return URL.createObjectURL(blob)
+}
