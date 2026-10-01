@@ -3,8 +3,11 @@ import requestApi from "@/utils/request/request";
 /** 本页管理的资产类型：技能（ADMINAGENT/skills，主文档 SKILL.md） */
 const KIND = 'skill'
 
-/** AI 润色的等待时间：后端要真的让 Agent 改写这份 md，可能几十秒，单独放大到 3 分钟 */
-const POLISH_TIMEOUT = 3 * 60 * 1000
+/** AI 润色的受理超时：后端立刻返回 runId，正常在毫秒级，给 1 分钟容错 */
+const POLISH_ACCEPT_TIMEOUT = 60 * 1000
+
+/** 轮询单次查询的超时：只是读一条运行记录，给 15 秒足够 */
+const POLISH_STATUS_TIMEOUT = 15 * 1000
 
 /** 获取智能管理概览（harness 版本、开发模式状态、三类资产数量与根目录） */
 export function getOverview() {
@@ -50,12 +53,25 @@ export function createAsset(data: { name: string; title?: string }) {
     });
 }
 
-/** 删除技能条目（连同目录内全部文件） */
+/** 删除技能条目（连同目录内全部文件，破坏性最大：只在「更多」菜单里触发） */
 export function removeAsset(name: string) {
     return requestApi({
         url: '/hippoadmin/agent-admin/remove',
         method: 'post',
         data: { kind: KIND, name }
+    });
+}
+
+/**
+ * 删除技能条目内的单个文件 / 单个目录（目录递归删）
+ *
+ * 工具栏「删除」的语义：只删当前选中的那一个节点，不动条目本身。
+ */
+export function removeAssetNode(data: { name: string; path: string }) {
+    return requestApi({
+        url: '/hippoadmin/agent-admin/remove-node',
+        method: 'post',
+        data: { kind: KIND, ...data }
     });
 }
 
@@ -92,12 +108,27 @@ export function createAssetNode(data: {
     });
 }
 
-/** AI 润色技能条目内的某个文件（file 为条目内相对路径，不传润色主文档） */
+/**
+ * AI 润色技能条目内的某个文件（异步：立刻返回 runId，再用 getPolishStatus 轮询）
+ *
+ * 一次润色约 100 秒，同步接口会超时/空等，所以后端改成先受理再轮询进度。
+ */
 export function polishAsset(data: { name: string; file?: string }) {
     return requestApi({
         url: '/hippoadmin/agent-admin/polish',
         method: 'post',
         data: { kind: KIND, ...data },
-        timeout: POLISH_TIMEOUT
+        // 只是「受理」，后端立刻返回，给 1 分钟足够
+        timeout: POLISH_ACCEPT_TIMEOUT
+    });
+}
+
+/** 查询润色进度（runId 来自 polishAsset 的返回） */
+export function getPolishStatus(data: { name: string; file?: string; runId: string }) {
+    return requestApi({
+        url: '/hippoadmin/agent-admin/polish/status',
+        method: 'get',
+        params: { kind: KIND, ...data },
+        timeout: POLISH_STATUS_TIMEOUT
     });
 }

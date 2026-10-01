@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, Query, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { AssetDetailDto, AssetKindDto, AssetNameDto, CreateAssetDto, CreateNodeDto, PolishAssetDto, SaveAssetDto, SetAssetEnabledDto } from 'src/dto/system/agent-admin/agent-admin.dto';
+import { AssetDetailDto, AssetKindDto, AssetNameDto, CreateAssetDto, CreateNodeDto, PolishAssetDto, PolishStatusDto, RemoveAssetNodeDto, SaveAssetDto, SetAssetEnabledDto } from 'src/dto/system/agent-admin/agent-admin.dto';
 import { AgentAdminService } from 'src/services/system/agent-admin.service';
 
 /**
@@ -96,12 +96,38 @@ export class AgentAdminController {
     }
 
     /**
+     * 删除条目里的一个文件 / 子目录（点哪个删哪个，不动条目本身）
+     */
+    @Post('/remove-node')
+    @UseGuards(AuthGuard('jwt'))
+    @UsePipes(new ValidationPipe())
+    removeNode(@Body() body: RemoveAssetNodeDto) {
+        return this.agentAdminService.removeNode(body.kind, body.name, body.path);
+    }
+
+    /**
      * AI 润色：让 DSH 直接改写这份 md（保持结构、标题、表格与事实不变，只改措辞）
+     *
+     * 异步接口：一次润色约 100 秒，这里立刻返回 { started, runId }，
+     * 前端拿 runId 轮询 /dev-agent/runs 看进度，跑完再刷新文件内容。
      */
     @Post('/polish')
     @UseGuards(AuthGuard('jwt'))
     @UsePipes(new ValidationPipe())
     polish(@Body() body: PolishAssetDto) {
         return this.agentAdminService.polish(body.kind, body.name, body.file);
+    }
+
+    /**
+     * 润色进度：前端拿 polish 返回的 runId 轮询这里
+     *
+     * 返回运行状态（running/ok/error/耗时）+ 该文件最新字节数，
+     * 前端据此显示「润色中… 37s」并在结束后判定是否真的被改写。
+     */
+    @Get('/polish/status')
+    @UseGuards(AuthGuard('jwt'))
+    @UsePipes(new ValidationPipe({ transform: true }))
+    polishStatus(@Query() query: PolishStatusDto) {
+        return this.agentAdminService.getPolishStatus(query.kind, query.name, query.file, query.runId);
     }
 }

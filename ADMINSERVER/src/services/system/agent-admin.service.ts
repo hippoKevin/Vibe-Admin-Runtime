@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { BusinessException } from 'src/common/exceptions/business.exception';
@@ -282,6 +283,10 @@ export class AgentAdminService {
 
     /**
      * AI 润色：让 DSH 直接改写这份 md（保持结构、标题、表格与事实不变，只改措辞与表达）
+     *
+     * 为什么还要比对改写前后的内容：DSH 正常退出（exit=0）并不代表文件真的被改写了
+     * ——它可能被文件策略拦下、只回答了没落盘、或者干脆没动手。只看退出码会得到
+     * 「提示润色完成、文件却一动不动」的假成功，所以这里以磁盘内容为准。
      */
     async polish(kindRaw: string, nameRaw: string, fileRaw?: string) {
         const { dir, docName, name } = this.resolveItem(kindRaw, nameRaw);
@@ -291,30 +296,78 @@ export class AgentAdminService {
         if (!fs.existsSync(target)) {
             throw new BusinessException(`文件不存在：${relative}`);
         }
+        if (fs.statSync(target).isDirectory()) {
+            throw new BusinessException(`「${relative}」是目录，不能润色，请选择文件`);
+        }
 
         const repoRoot = this.getRepoRoot();
         const repoRelative = path.relative(repoRoot, target).replace(/\\/g, '/');
+        const before = this.readRaw(target);
 
         const prompt = [
             `Polish exactly ONE Markdown document: ${repoRelative}`,
             'Modify ONLY that file. Do not create, edit, move, rename or delete any other file.',
             'Keep every heading, table row, list item, link and fact unchanged; only improve wording, clarity, tone and consistency.',
+            'Keep any YAML front matter (the --- block at the top) byte-identical.',
             'Do not add or remove sections and do not translate it.',
-            `Write the improved content back to ${repoRelative}.`,
+            `You MUST write the improved content back to ${repoRelative} with the edit/write tool; answering without writing the file is a failed task.`,
         ].join('\n');
 
-        const result = await this.devAgentService.runSyncTask(prompt);
+        // 异步起跑：一次润色实测约 100 秒，同步接口会让前端长时间空等、用户以为失败而反复点击。
+        // 这里立刻返回 runId，前端轮询 /dev-agent/runs 看进度，跑完再比对磁盘内容判定是否真的改写。
+        const runId = randomUUID();
+        this.devAgentService.startBackgroundSyncTask(prompt, runId);
+
+        return {
+            started: true,
+            runId,
+            name,
+            file: relative,
+            path: repoRelative,
+            /** 润色前的字节数，前端轮询结束后可比对 */
+            beforeSize: Buffer.byteLength(before, 'utf8'),
+        };
+    }
+
+    /**
+     * 润色进度：按 runId 取运行状态，并带上该文件的最新字节数
+     *
+     * 为什么要自己判定「是否真的改写」：DSH 正常退出（exit=0）并不代表文件真的被改写
+     * （可能被文件策略拦下、只回答了没落盘），只看退出码会得到
+     * 「提示润色完成、文件却一动不动」的假成功，所以这里比对字节数，前端再比对内容。
+     */
+    getPolishStatus(kindRaw: string, nameRaw: string, fileRaw: string | undefined, runId: string) {
+        const { dir, docName, name } = this.resolveItem(kindRaw, nameRaw);
+        const relative = String(fileRaw || '').trim() || docName;
+        const target = this.resolveFile(dir, relative, true);
+
+        if (!fs.existsSync(target)) {
+            throw new BusinessException(`文件不存在：${relative}`);
+        }
+        if (fs.statSync(target).isDirectory()) {
+            throw new BusinessException(`「${relative}」是目录，不能润色，请选择文件`);
+        }
+
+        const run = this.devAgentService.findRun(runId);
+        const content = this.readRaw(target);
 
         return {
             name,
             file: relative,
-            path: repoRelative,
-            ok: result.ok,
-            exitCode: result.exitCode,
-            duration: result.duration,
-            output: result.output,
-            files: result.files,
-            error: result.error,
+            path: path.relative(this.getRepoRoot(), target).replace(/\\/g, '/'),
+            runId,
+            /** 还查不到这条记录（刚提交的瞬间）时也返回 running，让前端继续轮询 */
+            running: run ? run.running === true : true,
+            found: !!run,
+            ok: run?.ok === true,
+            exitCode: run?.exitCode ?? null,
+            /** 运行耗时（毫秒） */
+            duration: run?.duration ?? 0,
+            /** DSH 的最终答复，前端可折叠展示 */
+            output: run?.output ?? '',
+            error: run?.error || undefined,
+            /** 该文件当前字节数，前端与提交前比对判断是否真的改写 */
+            size: Buffer.byteLength(content, 'utf8'),
         };
     }
 
@@ -332,6 +385,35 @@ export class AgentAdminService {
         this.logger.warn(`删除资产：${path.relative(this.getAgentRoot(), dir)}`);
 
         return { name, removed: true };
+    }
+
+    /**
+     * 删除条目里的一个文件或子目录（点哪个删哪个）
+     *
+     * @param pathRaw 条目内相对路径，例如 `workflow/new-page.md` 或 `workflow`
+     */
+    removeNode(kindRaw: string, nameRaw: string, pathRaw: string) {
+        const { dir, name } = this.resolveItem(kindRaw, nameRaw);
+        const relative = String(pathRaw || '')
+            .trim()
+            .replace(/\\/g, '/')
+            .replace(/^\/+|\/+$/g, '');
+
+        if (!relative) {
+            throw new BusinessException('不能删除条目根目录，如需删除整个条目请用「删除条目」');
+        }
+
+        // 复用同一个相对路径校验：路径片段白名单 + 目录穿越断言
+        const target = this.resolveFile(dir, relative, true);
+        if (!fs.existsSync(target)) {
+            throw new BusinessException(`不存在：${relative}`);
+        }
+
+        const isDir = fs.statSync(target).isDirectory();
+        fs.rmSync(target, { recursive: isDir, force: true });
+        this.logger.warn(`删除资产${isDir ? '目录' : '文件'}：${path.relative(this.getAgentRoot(), target)}`);
+
+        return { name, path: relative, isDir, removed: true };
     }
 
     // ------------------------------------------------------------------
@@ -555,6 +637,16 @@ export class AgentAdminService {
                 return `${content.slice(0, CONTENT_LIMIT)}\n\n…（内容过大，已截断）`;
             }
             return content;
+        } catch (error) {
+            this.logger.warn(`读取文件失败（${file}）：${error?.message || error}`);
+            return '';
+        }
+    }
+
+    /** 读未经截断的原始内容（比对润色前后是否真的改写时用，不能拿被截断的文本比） */
+    private readRaw(file: string): string {
+        try {
+            return fs.readFileSync(file, 'utf-8');
         } catch (error) {
             this.logger.warn(`读取文件失败（${file}）：${error?.message || error}`);
             return '';

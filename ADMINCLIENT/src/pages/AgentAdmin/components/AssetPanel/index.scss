@@ -434,4 +434,53 @@
     font-size: calc(12px * var(--app-font-scale, 1));
     color: var(--td-text-color-placeholder);
   }
+
+  /* ===== 破坏性删除的重度提醒 =====
+     目录 / 整个条目的删除不可恢复，用红底 + 红色边框把风险和普通确认区分开 */
+  &__danger {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--td-error-color);
+    border-radius: var(--td-radius-default);
+    background: var(--td-error-color-1);
+  }
+
+  &__danger-title {
+    font-size: calc(14px * var(--app-font-scale, 1));
+    font-weight: 600;
+    color: var(--td-error-color);
+  }
+
+  /* 将被删除的目标路径：等宽字体，避免看错层级 */
+  &__danger-path {
+    padding: 6px 8px;
+    border-radius: var(--td-radius-small);
+    background: var(--td-bg-color-container);
+    color: var(--td-error-color);
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-size: calc(12px * var(--app-font-scale, 1));
+    word-break: break-all;
+  }
+
+  &__danger-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: calc(13px * var(--app-font-scale, 1));
+    color: var(--td-text-color-primary);
+    line-height: 1.6;
+  }
+
+  /* 当前选中的是目录：与「当前文件」在视觉上明确区分 */
+  &__content-dir {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    color: var(--td-brand-color);
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }

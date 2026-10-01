@@ -81,3 +81,24 @@ export class PolishAssetDto extends AssetNameDto {
     @MaxLength(200)
     file?: string;
 }
+
+/** 删除条目内的文件 / 子目录入参：path 为条目内相对路径 */
+export class RemoveAssetNodeDto extends AssetNameDto {
+    @IsString()
+    @IsNotEmpty({ message: 'path 不能为空' })
+    @MaxLength(200)
+    path: string;
+}
+
+/** 润色进度入参：runId 为 polish 返回的运行 id */
+export class PolishStatusDto extends AssetNameDto {
+    @IsOptional()
+    @IsString()
+    @MaxLength(200)
+    file?: string;
+
+    @IsString()
+    @IsNotEmpty({ message: 'runId 不能为空' })
+    @MaxLength(64)
+    runId: string;
+}

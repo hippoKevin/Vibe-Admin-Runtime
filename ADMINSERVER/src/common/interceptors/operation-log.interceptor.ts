@@ -64,6 +64,7 @@ const OPERATION_ROUTES: OperationRoute[] = [
     { method: 'POST', path: 'agent-admin/create', name: '新建智能资产' },
     { method: 'POST', path: 'agent-admin/save', name: '保存智能资产' },
     { method: 'POST', path: 'agent-admin/remove', name: '删除智能资产', destructive: true },
+    { method: 'POST', path: 'agent-admin/remove-node', name: '删除智能资产文件或目录', destructive: true },
     { method: 'POST', path: 'agent-admin/enabled', name: '启用停用智能资产' },
     { method: 'POST', path: 'agent-admin/node', name: '新建智能资产目录或文件' },
     { method: 'POST', path: 'agent-admin/polish', name: 'AI 润色智能资产' },
