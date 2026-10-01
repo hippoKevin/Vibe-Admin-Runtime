@@ -335,7 +335,6 @@ import {
 import {
   type DevModeChannel,
   closeDevMode,
-  closeDevModeIfUnauthenticated,
   devModeChannel,
   devModeDockOffset,
   devModeDraft,
@@ -1041,6 +1040,12 @@ function loadStatus() {
       const message = error?.message || t('devMode.statusFailed')
       setStatus(message, true)
       setHint(message, true)
+
+      // 连 /status 都拿不到（token 失效、被踢回登录页、后端没起来……）说明开发模式此刻毫无用处。
+      // 更关键的是：不关会陷入死循环 —— 请求 401 → 拦截器 removeItem + location.href='/login'
+      // → 路由守卫认为"有 token 就是已登录"又弹回首页 → 组件重新挂载 → 再请求……
+      // 所以这里直接收起，用户重新登录后再打开即可。
+      closeDevMode()
     })
 }
 
@@ -1387,16 +1392,21 @@ function handleVisibility() {
 }
 
 /**
- * 被路由守卫弹回登录页时立刻收起开发模式
+ * 只要路由落到登录页，立刻收起开发模式（**不看 token**）
  *
- * 这是「页面一直刷新」的根因防线：未登录还留着开发模式，它按完成记录跳转、
- * 守卫再弹回登录页，来回就会不停刷新。
+ * 这是「页面一直刷新」的根因防线：token 过期/失效时，请求拦截器会
+ * `localStorage.removeItem('token')` 然后 `window.location.href = '/login'` 整页跳转；
+ * 而 dev-mode-open 还在 localStorage 里，开发模式每次都跟着应用重新挂载、
+ * 又去请求 /dev-agent/status 拿 401、再被踢回登录页 —— 于是无限刷新。
+ * 所以这里必须无条件关掉：登录页上根本不该有开发模式。
+ * immediate: true 让它在组件 setup 阶段就先判一次，避免先发请求再关闭。
  */
 watch(
   () => router.currentRoute.value.path,
   (path) => {
-    if (path === '/login') closeDevModeIfUnauthenticated()
+    if (path === '/login') closeDevMode()
   },
+  { immediate: true },
 )
 
 /**
@@ -1407,8 +1417,8 @@ watch(
 onMounted(() => {
   mounted = true
 
-  // 未登录就别启动（接口都调不通，还会被守卫弹回登录页来回跳）
-  if (!isDevModeAllowed()) {
+  // 登录页不启动；未登录（本地没有 token）也不启动
+  if (router.currentRoute.value.path === '/login' || !isDevModeAllowed()) {
     closeDevMode()
     mounted = false
     return

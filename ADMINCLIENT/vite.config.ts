@@ -34,6 +34,13 @@ export default defineConfig(({ mode }: ConfigEnv): UserConfig => {
       },
     },
     server: {
+      // Windows 上 Vite 的文件监听会漏事件（编辑器/工具以"替换文件"方式写入时尤其明显），
+      // 表现为「硬盘上代码是新的，dev server 却一直吐旧模块」，排查时非常费劲。
+      // 改成轮询换取确定性：代价是少量 CPU，但改动一定会被感知。
+      watch: {
+        usePolling: true,
+        interval: 400
+      },
       // 代理配置
       proxy: {
         '/proxy': {
