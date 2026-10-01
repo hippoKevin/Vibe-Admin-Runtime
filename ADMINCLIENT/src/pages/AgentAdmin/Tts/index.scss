@@ -141,6 +141,11 @@
     overflow-y: auto;
   }
 
+  /* 音色单选整组：铺满宽度，避免 TDesign 默认的 inline 间距影响行高 */
+  &__voice-group {
+    display: block;
+  }
+
   &__voice-item {
     display: flex;
     align-items: center;
@@ -155,6 +160,12 @@
 
     &--active {
       background: var(--td-brand-color-light);
+    }
+
+    /* 试听按钮要压在 radio 之上：整行可点选，但点「试听」只试听、不选中 */
+    :deep(.t-button) {
+      position: relative;
+      z-index: 1;
     }
   }
 

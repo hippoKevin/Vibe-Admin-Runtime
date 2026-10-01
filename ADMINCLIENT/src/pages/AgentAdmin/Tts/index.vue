@@ -70,27 +70,36 @@
               <div class="tts__voice-list">
                 <t-loading :loading="loading" size="small">
                   <div v-if="!voices.length" class="tts__empty">{{ $t('agentAdmin.ttsNoVoice') }}</div>
-                  <label
-                    v-for="voice in voices"
-                    :key="voice.name"
-                    class="tts__voice-item"
-                    :class="{ 'tts__voice-item--active': model.voice === voice.name }"
-                  >
-                    <t-radio v-model="model.voice" :value="voice.name" @change="markDirty">
-                      <span class="tts__voice-name">{{ voice.name }}</span>
-                    </t-radio>
-                    <span class="tts__voice-size">{{ formatBytes(voice.size) }}</span>
-                    <t-button
-                      size="small"
-                      variant="text"
-                      theme="primary"
-                      :loading="auditionVoice === voice.name"
-                      :disabled="!canSynthesize"
-                      @click.prevent="handleAudition(voice.name)"
+                  <!--
+                    必须整组共用一个 t-radio-group：
+                    t-radio 的 modelValue 是 Boolean 单值语义，单独使用时 radioChecked 直接等于
+                    modelValue，传入字符串（如 voice_01.wav）会被当成 true，导致所有音色同时显示为选中、
+                    点击也不生效（onLabelClick 里 `radioChecked && !allowUncheck` 直接 return）。
+                    radio-group 用 value 字符串比较，才是这里正确的用法。
+                  -->
+                  <t-radio-group v-model="model.voice" class="tts__voice-group" @change="markDirty">
+                    <div
+                      v-for="voice in voices"
+                      :key="voice.name"
+                      class="tts__voice-item"
+                      :class="{ 'tts__voice-item--active': model.voice === voice.name }"
                     >
-                      {{ auditionVoice === voice.name ? $t('agentAdmin.ttsAuditioning') : $t('agentAdmin.ttsAudition') }}
-                    </t-button>
-                  </label>
+                      <t-radio :value="voice.name">
+                        <span class="tts__voice-name">{{ voice.name }}</span>
+                      </t-radio>
+                      <span class="tts__voice-size">{{ formatBytes(voice.size) }}</span>
+                      <t-button
+                        size="small"
+                        variant="text"
+                        theme="primary"
+                        :loading="auditionVoice === voice.name"
+                        :disabled="!canSynthesize"
+                        @click.stop="handleAudition(voice.name)"
+                      >
+                        {{ auditionVoice === voice.name ? $t('agentAdmin.ttsAuditioning') : $t('agentAdmin.ttsAudition') }}
+                      </t-button>
+                    </div>
+                  </t-radio-group>
                 </t-loading>
               </div>
             </section>

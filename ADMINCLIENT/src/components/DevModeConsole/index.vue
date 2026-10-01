@@ -2010,7 +2010,9 @@ onMounted(() => {
         if (!ttsReady.value) return null
         const result = await synthesizeSpeech({
           text,
-          voice: ttsStatus.value?.defaultVoice || undefined,
+          // 不传 voice：由后端用「TTS 管理」里保存的音色（ADMINAGENT/tts-config.json）。
+          // 这里原先传 defaultVoice（IndexTTS 的出厂默认 voice_01.wav），会把用户在管理页
+          // 选好的音色直接覆盖掉，导致「换了音色但开发模式播报没变」。
           // IndexTTS 支持 ZH/EN/JA/AR/ES，跟随界面语言
           lang: String(locale.value || '').startsWith('en') ? 'EN' : 'ZH',
         })
