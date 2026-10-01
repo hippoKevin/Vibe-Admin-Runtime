@@ -1,3 +1,7 @@
+---
+enabled: true
+---
+
 # dev-agent-generate
 
 ## 作用

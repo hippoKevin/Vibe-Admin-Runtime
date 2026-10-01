@@ -1,3 +1,7 @@
+---
+enabled: true
+---
+
 # 后端开发规范 · ADMINSERVER
 
 > 本文件是 ADMINSERVER（NestJS）的唯一后端规范，由现有代码约定提炼而成。

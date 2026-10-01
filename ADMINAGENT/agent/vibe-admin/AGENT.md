@@ -1,3 +1,7 @@
+---
+enabled: true
+---
+
 # vibe-admin
 
 ## 角色
