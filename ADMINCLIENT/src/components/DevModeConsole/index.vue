@@ -335,6 +335,7 @@ import {
 import {
   type DevModeChannel,
   closeDevMode,
+  closeDevModeIfUnauthenticated,
   devModeChannel,
   devModeDockOffset,
   devModeDraft,
@@ -342,6 +343,7 @@ import {
   devModePanelOpen,
   devModeSpeak,
   devModeVeilAlpha,
+  isDevModeAllowed,
   saveDevModeChannel,
   saveDevModeDockOffset,
   saveDevModeDraft,
@@ -764,10 +766,43 @@ function resolvePageRoute(files: DevAgentChangedFile[]): MenuPage | null {
   return frontend ? frontend.page : null
 }
 
+/**
+ * 每条完成记录只自动跳转一次
+ *
+ * 否则会出现死循环：跳转 -> 路由守卫发现未登录 -> 弹回登录页 -> 组件重新挂载
+ * -> 又读到同一条完成记录 -> 再跳转……页面就会一直刷新。
+ */
+const NAVIGATED_RUN_KEY = 'dev-mode-navigated-run'
+
+function markRunNavigated(runId: string | number) {
+  try {
+    localStorage.setItem(NAVIGATED_RUN_KEY, String(runId))
+  } catch {
+    /* 忽略 */
+  }
+}
+
+function hasRunNavigated(runId: string | number) {
+  try {
+    return localStorage.getItem(NAVIGATED_RUN_KEY) === String(runId)
+  } catch {
+    return false
+  }
+}
+
 /** 任务完成后：把被改动的文件映射成菜单路由并跳过去 */
-function jumpToChangedPage(files: DevAgentChangedFile[]) {
+function jumpToChangedPage(files: DevAgentChangedFile[], runId?: string | number | null) {
   const list = Array.isArray(files) ? files : []
   if (!list.length) return
+
+  // 未登录（或已被守卫弹回登录页）时不要再跳，否则会和路由守卫来回打架
+  if (!isDevModeAllowed()) {
+    closeDevMode()
+    return
+  }
+
+  const hasRunId = runId !== undefined && runId !== null
+  if (hasRunId && hasRunNavigated(runId as string | number)) return
 
   const target = resolvePageRoute(list)
   if (!target) {
@@ -775,6 +810,9 @@ function jumpToChangedPage(files: DevAgentChangedFile[]) {
     MessagePlugin.info(t('devMode.appliedNoMatch'))
     return
   }
+
+  // 先记账再跳：即使这次跳转被守卫拦下，也不会再重复跳（防死循环）
+  if (hasRunId) markRunNavigated(runId as string | number)
 
   MessagePlugin.success(t('devMode.appliedJump', { name: target.name }))
   router.push(`/${target.name}`)
@@ -904,7 +942,7 @@ function pollUntilRunDone(runId: string | number | null, adopted = false) {
                   reason: finished.error || t('devMode.exitCodeLabel', { code: finished.exitCode }),
                 }),
           )
-          if (channelOfRun !== 'reply') jumpToChangedPage(finished.files || [])
+          if (channelOfRun !== 'reply') jumpToChangedPage(finished.files || [], runId)
         } else {
           setHint(t('devMode.taskEnded'))
         }
@@ -1349,12 +1387,32 @@ function handleVisibility() {
 }
 
 /**
+ * 被路由守卫弹回登录页时立刻收起开发模式
+ *
+ * 这是「页面一直刷新」的根因防线：未登录还留着开发模式，它按完成记录跳转、
+ * 守卫再弹回登录页，来回就会不停刷新。
+ */
+watch(
+  () => router.currentRoute.value.path,
+  (path) => {
+    if (path === '/login') closeDevModeIfUnauthenticated()
+  },
+)
+
+/**
  * Lifecycle
  * 生命周期
  */
 
 onMounted(() => {
   mounted = true
+
+  // 未登录就别启动（接口都调不通，还会被守卫弹回登录页来回跳）
+  if (!isDevModeAllowed()) {
+    closeDevMode()
+    mounted = false
+    return
+  }
 
   if (meshRef.value) mesh = new SphereMesh(meshRef.value)
   voice = new VoiceInput({

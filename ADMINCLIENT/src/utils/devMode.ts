@@ -108,8 +108,17 @@ function readChannel(key: string, fallback: DevModeChannel): DevModeChannel {
   return value === 'code' || value === 'reply' ? value : fallback
 }
 
-/** 开发模式是否打开：应用启动时若上次是打开的，直接恢复 */
-export const devModeOpen = ref<boolean>(readBoolean(DEV_MODE_OPEN_KEY, false))
+/** 是否已登录：开发模式要调后端接口，未登录时不该打开 */
+export function isDevModeAllowed(): boolean {
+  try {
+    return Boolean(localStorage.getItem('token'))
+  } catch {
+    return false
+  }
+}
+
+/** 开发模式是否打开：只在上次是打开的「且已登录」时才恢复 */
+export const devModeOpen = ref<boolean>(readBoolean(DEV_MODE_OPEN_KEY, false) && isDevModeAllowed())
 
 /** 输入草稿 */
 export const devModeDraft = ref<string>(readString(DEV_MODE_DRAFT_KEY, ''))
@@ -138,16 +147,30 @@ export const devModeChannel = ref<DevModeChannel>(readChannel(DEV_MODE_CHANNEL_K
 /** 是否语音播报（快速回复通道的答复用 TTS 念出来） */
 export const devModeSpeak = ref<boolean>(readBoolean(DEV_MODE_SPEAK_KEY, true))
 
-/** 打开开发模式（持久化，刷新后自动恢复） */
+/** 打开开发模式（未登录时不开；持久化，刷新后自动恢复） */
 export function openDevMode() {
+  if (!isDevModeAllowed()) return false
   devModeOpen.value = true
   writeBoolean(DEV_MODE_OPEN_KEY, true)
+  return true
 }
 
 /** 关闭开发模式 */
 export function closeDevMode() {
   devModeOpen.value = false
   writeBoolean(DEV_MODE_OPEN_KEY, false)
+}
+
+/**
+ * 登录态没了就收起开发模式
+ *
+ * 场景：未登录时开发模式还开着，路由守卫会把页面弹回登录页，
+ * 而开发模式如果继续动作（例如按完成记录跳转）就会和守卫来回打架、页面不停刷新。
+ */
+export function closeDevModeIfUnauthenticated(): boolean {
+  if (isDevModeAllowed()) return false
+  closeDevMode()
+  return true
 }
 
 /**
