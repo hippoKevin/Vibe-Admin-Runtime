@@ -1,0 +1,347 @@
+/* ===== TTS 管理页（音色 + 影响输出声音的参数）===== */
+
+/* 页面铺满内容区：与智能管理其它子页面保持一致 */
+.container {
+  height: calc(100vh - 110px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+
+  /* 卡片铺满容器，卡片主体吃掉剩余高度 */
+  :deep(.t-card) {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* 卡片主体再往下一层交给 .tts__body 分配高度 */
+  :deep(.t-card__body) {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    padding-top: 0;
+    min-height: 0;
+  }
+}
+
+.tts {
+  /* 头部在窄屏下允许换行，避免状态标签把标题挤成竖排 */
+  :deep(.t-card__header) {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  :deep(.t-card__actions) {
+    margin-left: auto;
+  }
+
+  &__title {
+    font-size: calc(15px * var(--app-font-scale, 1));
+    font-weight: 600;
+    color: var(--td-text-color-primary);
+    white-space: nowrap;
+  }
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    gap: 8px;
+  }
+
+  &__alert {
+    flex-shrink: 0;
+  }
+
+  &__alert-line {
+    font-size: calc(12px * var(--app-font-scale, 1));
+    line-height: 1.7;
+    word-break: break-all;
+  }
+
+  /* 左右两栏铺满剩余高度，各自内部滚动 */
+  &__panes {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    gap: 12px;
+  }
+
+  &__voice {
+    display: flex;
+    flex: 0 0 320px;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid var(--td-component-stroke);
+    border-radius: var(--td-radius-default);
+  }
+
+  &__main {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid var(--td-component-stroke);
+    border-radius: var(--td-radius-default);
+  }
+
+  &__section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--td-component-stroke);
+    background: var(--td-bg-color-secondarycontainer);
+  }
+
+  &__section-title {
+    font-size: calc(13px * var(--app-font-scale, 1));
+    font-weight: 600;
+    color: var(--td-text-color-primary);
+    white-space: nowrap;
+  }
+
+  &__section-meta {
+    min-width: 0;
+    overflow: hidden;
+    font-size: calc(12px * var(--app-font-scale, 1));
+    color: var(--td-text-color-placeholder);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 当前选中音色 + 音色目录 */
+  &__voice-current {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--td-component-stroke);
+    font-size: calc(12px * var(--app-font-scale, 1));
+    color: var(--td-text-color-secondary);
+  }
+
+  &__voice-dir {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--td-text-color-placeholder);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__voice-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  &__voice-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--td-component-stroke);
+    cursor: pointer;
+
+    &:hover {
+      background: var(--td-bg-color-container-hover);
+    }
+
+    &--active {
+      background: var(--td-brand-color-light);
+    }
+  }
+
+  &__voice-name {
+    font-size: calc(13px * var(--app-font-scale, 1));
+    color: var(--td-text-color-primary);
+  }
+
+  &__voice-size {
+    margin-left: auto;
+    flex-shrink: 0;
+    font-size: calc(11px * var(--app-font-scale, 1));
+    color: var(--td-text-color-placeholder);
+  }
+
+  &__empty {
+    padding: 24px 12px;
+    font-size: calc(13px * var(--app-font-scale, 1));
+    color: var(--td-text-color-placeholder);
+    text-align: center;
+  }
+
+  /* 参数区：整块内部滚动，参数再多也不撑破页面 */
+  &__scroll {
+    flex: 1;
+    min-height: 0;
+    padding: 12px;
+    overflow-y: auto;
+  }
+
+  &__toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    row-gap: 6px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--td-component-stroke);
+  }
+
+  &__toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+
+  &__lang-label {
+    font-size: calc(12px * var(--app-font-scale, 1));
+    color: var(--td-text-color-secondary);
+    white-space: nowrap;
+  }
+
+  &__lang-select {
+    width: 140px;
+  }
+
+  &__group {
+    margin-top: 14px;
+  }
+
+  &__group-title {
+    margin-bottom: 8px;
+    padding-left: 8px;
+    border-left: 3px solid var(--td-brand-color);
+    font-size: calc(13px * var(--app-font-scale, 1));
+    font-weight: 600;
+    color: var(--td-text-color-primary);
+  }
+
+  /* 参数用「标签 + 控件」两列排布，窄屏自动折行 */
+  &__params {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 20px;
+  }
+
+  &__param {
+    display: flex;
+    align-items: center;
+    flex: 1 1 320px;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  &__param-label {
+    display: flex;
+    align-items: center;
+    flex: 0 0 132px;
+    gap: 4px;
+    min-width: 0;
+    font-size: calc(12px * var(--app-font-scale, 1));
+    color: var(--td-text-color-secondary);
+  }
+
+  &__param-help {
+    flex-shrink: 0;
+    color: var(--td-text-color-placeholder);
+    cursor: help;
+  }
+
+  &__param-value {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  &__param-slider {
+    flex: 1;
+    min-width: 80px;
+  }
+
+  &__param-number {
+    flex-shrink: 0;
+    width: 86px;
+  }
+
+  &__param-switch {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__param-text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* 试听区 */
+  &__preview {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  &__preview-text {
+    width: 100%;
+  }
+
+  &__preview-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  &__preview-tip {
+    font-size: calc(12px * var(--app-font-scale, 1));
+    color: var(--td-warning-color);
+  }
+
+  &__player {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--td-component-stroke);
+    border-radius: var(--td-radius-default);
+    background: var(--td-bg-color-secondarycontainer);
+  }
+
+  /* 原生播放器：带鉴权的音频已被换成 blob: URL，直接交给浏览器播放 */
+  &__player-audio {
+    flex: 1;
+    min-width: 220px;
+    height: 32px;
+  }
+
+  &__player-label {
+    font-size: calc(12px * var(--app-font-scale, 1));
+    color: var(--td-text-color-secondary);
+  }
+
+  &__player-empty {
+    font-size: calc(12px * var(--app-font-scale, 1));
+    color: var(--td-text-color-placeholder);
+  }
+
+  &__player-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    font-size: calc(12px * var(--app-font-scale, 1));
+    color: var(--td-text-color-placeholder);
+  }
+}
