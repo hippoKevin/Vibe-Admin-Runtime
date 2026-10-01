@@ -3,6 +3,9 @@ import requestApi from "@/utils/request/request";
 /** 本页管理的资产类型：技能（ADMINAGENT/skills，主文档 SKILL.md） */
 const KIND = 'skill'
 
+/** AI 润色的等待时间：后端要真的让 Agent 改写这份 md，可能几十秒，单独放大到 3 分钟 */
+const POLISH_TIMEOUT = 3 * 60 * 1000
+
 /** 获取智能管理概览（harness 版本、开发模式状态、三类资产数量与根目录） */
 export function getOverview() {
     return requestApi({
@@ -53,5 +56,24 @@ export function removeAsset(name: string) {
         url: '/hippoadmin/agent-admin/remove',
         method: 'post',
         data: { kind: KIND, name }
+    });
+}
+
+/** 启用 / 停用技能条目（写进主文档 SKILL.md 顶部的 front matter） */
+export function setAssetEnabled(data: { name: string; enabled: boolean }) {
+    return requestApi({
+        url: '/hippoadmin/agent-admin/enabled',
+        method: 'post',
+        data: { kind: KIND, ...data }
+    });
+}
+
+/** AI 润色技能条目内的某个文件（file 为条目内相对路径，不传润色主文档） */
+export function polishAsset(data: { name: string; file?: string }) {
+    return requestApi({
+        url: '/hippoadmin/agent-admin/polish',
+        method: 'post',
+        data: { kind: KIND, ...data },
+        timeout: POLISH_TIMEOUT
     });
 }

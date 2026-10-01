@@ -27,21 +27,24 @@
       </t-space>
     </template>
 
-    <!-- 右上：资产类型 + 后台目录 + 运行环境状态（三个页面保持一致） -->
+    <!-- 右上：资产类型 + 后台目录 + 运行环境状态（Agent / 工具页保持原样） -->
     <template #actions>
       <t-space class="asset-panel__actions" align="center" :size="8" break-line>
+        <!-- 技能页保留「技能」标签；后台目录 / Harness / Dsh 仅 Agent、工具页展示 -->
         <t-tag theme="primary" variant="light">{{ kindLabel }}</t-tag>
-        <span class="asset-panel__root" :title="kindRoot">{{ kindRoot || '-' }}</span>
-        <t-tag :theme="harnessPresent ? 'success' : 'warning'" variant="light">
-          {{ harnessPresent
-            ? $t('agentAdmin.harnessVersion', { version: harnessVersion })
-            : $t('agentAdmin.harnessMissing') }}
-        </t-tag>
-        <t-tooltip :content="dshHint">
-          <t-tag :theme="dshReady ? 'success' : 'warning'" variant="light">
-            {{ dshReady ? $t('agentAdmin.dshReady') : $t('agentAdmin.dshNotReady') }}
+        <template v-if="kind !== 'skill'">
+          <span class="asset-panel__root" :title="kindRoot">{{ kindRoot || '-' }}</span>
+          <t-tag :theme="harnessPresent ? 'success' : 'warning'" variant="light">
+            {{ harnessPresent
+              ? $t('agentAdmin.harnessVersion', { version: harnessVersion })
+              : $t('agentAdmin.harnessMissing') }}
           </t-tag>
-        </t-tooltip>
+          <t-tooltip :content="dshHint">
+            <t-tag :theme="dshReady ? 'success' : 'warning'" variant="light">
+              {{ dshReady ? $t('agentAdmin.dshReady') : $t('agentAdmin.dshNotReady') }}
+            </t-tag>
+          </t-tooltip>
+        </template>
       </t-space>
     </template>
 
@@ -59,11 +62,17 @@
               v-for="item in filteredItems"
               :key="item.name"
               class="asset-panel__item"
-              :class="{ 'asset-panel__item--active': item.name === activeName }"
+              :class="{
+                'asset-panel__item--active': item.name === activeName,
+                'asset-panel__item--disabled': item.enabled === false
+              }"
               @click="handleSelectItem(item)"
             >
               <div class="asset-panel__item-head">
                 <span class="asset-panel__item-name">{{ item.name }}</span>
+                <t-tag v-if="item.enabled === false" theme="default" variant="light" size="small">
+                  {{ $t('agentAdmin.enabledTag') }}
+                </t-tag>
                 <t-tag v-if="!item.hasDoc" theme="warning" variant="light" size="small">
                   {{ $t('agentAdmin.noDoc') }}
                 </t-tag>
@@ -95,6 +104,37 @@
               <span class="asset-panel__detail-path" :title="detail.path">{{ detail.path }}</span>
             </div>
             <t-space align="center" :size="8">
+              <!-- 启用 / 停用：状态写进主文档顶部的 front matter -->
+              <span class="asset-panel__enabled">
+                <t-tooltip :content="enabledTip">
+                  <t-switch
+                    v-model="enabledValue"
+                    size="small"
+                    :loading="enabledLoading"
+                    :disabled="isEditing || isPolishing"
+                    @change="handleToggleEnabled"
+                  />
+                </t-tooltip>
+                <span
+                  class="asset-panel__enabled-label"
+                  :class="{ 'asset-panel__enabled-label--off': !enabledValue }"
+                >
+                  {{ enabledValue ? $t('agentAdmin.enabledOn') : $t('agentAdmin.enabledOff') }}
+                </span>
+              </span>
+              <!-- AI 润色：同步接口，只处理当前正在查看的文件，耗时较长 -->
+              <t-button
+                size="small"
+                variant="outline"
+                :loading="isPolishing"
+                :disabled="isEditing || !activeFile"
+                @click="handlePolish"
+              >
+                {{ isPolishing ? $t('agentAdmin.polishRunning') : $t('agentAdmin.polish') }}
+                <template #icon>
+                  <StarIcon />
+                </template>
+              </t-button>
               <t-button v-if="!isEditing" size="small" variant="outline" :disabled="!canEdit" @click="handleStartEdit">
                 {{ $t('agentAdmin.edit') }}
                 <template #icon>
@@ -244,12 +284,21 @@ import {
   FileIcon,
   FolderIcon,
   FolderOpenIcon,
-  RefreshIcon
+  RefreshIcon,
+  StarIcon
 } from 'tdesign-icons-vue-next'
 // 2. 工程内工具
 import { useI18n } from 'vue-i18n'
 // 3. 类型与接口（接口由各页面同目录 api.ts 通过 prop 传入，kind 已在页面侧固定）
-import type { AssetApi, AssetDetail, AssetFile, AssetItem, AssetKind, AssetOverview } from './types'
+import type {
+  AssetApi,
+  AssetDetail,
+  AssetFile,
+  AssetItem,
+  AssetKind,
+  AssetOverview,
+  AssetPolishResult
+} from './types'
 
 const props = defineProps({
   /** 能力资产类型：skill / agent / tool */
@@ -348,6 +397,12 @@ const createVisible = ref(false)
 const creating = ref(false)
 // 新建表单
 const createForm = ref({ name: '', title: '' })
+// 当前条目的启用状态（详情头部开关的初值与回滚依据）
+const enabledValue = ref(true)
+// 启用 / 停用请求中
+const enabledLoading = ref(false)
+// AI 润色中（同步接口，可能几十秒）
+const isPolishing = ref(false)
 
 /**
  * Computed Setting
@@ -457,6 +512,13 @@ const displayContent = computed(() => {
   return fileContent.value || t('agentAdmin.emptyContent')
 })
 
+/** 启用开关的悬浮提示：说明点了会发生什么，或为什么点不了 */
+const enabledTip = computed(() => {
+  if (isEditing.value) return t('agentAdmin.enabledEditingTip')
+  if (isPolishing.value) return t('agentAdmin.enabledPolishingTip')
+  return enabledValue.value ? t('agentAdmin.disableAction') : t('agentAdmin.enableAction')
+})
+
 /**
  * Method Setting
  * 方法配置
@@ -493,6 +555,14 @@ function formatDateTime(value?: string | null): string {
 /** 文本字节数：用来核对接口返回的内容是不是目标文件的真实内容 */
 function utf8Size(text: string): number {
   return new TextEncoder().encode(text).length
+}
+
+/** 耗时格式化：12500 -> 12.5s（润色可能耗时几十秒，用秒展示更好读） */
+function formatDuration(ms?: number | null): string {
+  const value = Number(ms)
+  if (!Number.isFinite(value) || value < 0) return '-'
+  if (value < 1000) return `${Math.round(value)}ms`
+  return `${(value / 1000).toFixed(1)}s`
 }
 
 /**
@@ -667,8 +737,9 @@ async function loadList(autoSelect = false) {
  * Get Detail
  * 获取条目详情（主文档 + 文件清单），并默认展示主文档
  * @param name 条目名称
+ * @param keepFile 是否保留当前正在查看的文件（润色 / 启用后刷新内容时用，避免跳回主文档）
  */
-async function loadDetail(name: string) {
+async function loadDetail(name: string, keepFile = false) {
   detailLoading.value = true
   try {
     const res = await props.api.getAssetDetail(name)
@@ -681,15 +752,20 @@ async function loadDetail(name: string) {
     const data = res.data as AssetDetail
     const files = data.files || []
     const target = files.find((file) => file.path === data.docName) ?? files[0]
+    const previous = activeFile.value
+    // 刷新后原文件还在就继续停留（仅刷新内容），否则回到主文档
+    const kept = keepFile && previous && files.some((file) => file.path === previous) ? previous : ''
 
     detail.value = data
+    // 启用状态恒定看主文档
+    enabledValue.value = data.enabled !== false
     docContent.value = String(data.content ?? '')
     fileContent.value = ''
     contentState.value = 'ok'
     collapsedDirs.value = new Set()
-    activeFile.value = target?.path ?? ''
+    activeFile.value = kept || target?.path || ''
 
-    if (target) await loadFileContent(target.path)
+    if (activeFile.value) await loadFileContent(activeFile.value)
   } catch {
     // 网络异常已由请求拦截器统一提示
   } finally {
@@ -825,6 +901,90 @@ async function handleSave() {
   } finally {
     saving.value = false
   }
+}
+
+/**
+ * Set Enabled
+ * 启用 / 停用条目：把状态写进主文档顶部的 front matter，失败时把开关回滚到原状态
+ * @param value 开关切换后的新状态（t-switch 默认是布尔值）
+ */
+async function handleToggleEnabled(value: string | number | boolean) {
+  const current = detail.value
+  if (!current || enabledLoading.value) return
+
+  const target = value === true
+  enabledLoading.value = true
+  try {
+    const res = await props.api.setAssetEnabled({ name: current.name, enabled: target })
+    if (res.code !== 2000) {
+      // 失败：回滚开关，别让界面显示一个并没有生效的状态
+      enabledValue.value = !target
+      MessagePlugin.error(res.message ?? res.msg ?? t('agentAdmin.enableFailed'))
+      return
+    }
+
+    const enabled = res.data?.enabled !== false
+    enabledValue.value = enabled
+    MessagePlugin.success(t(enabled ? 'agentAdmin.enableSuccess' : 'agentAdmin.disableSuccess'))
+    // 列表上的停用标记要跟着变
+    await loadList()
+    // 主文档被写入了 front matter，内容同步刷新；编辑中则跳过，避免覆盖未保存的修改
+    if (!isEditing.value && activeName.value === current.name) await loadDetail(current.name, true)
+  } catch {
+    enabledValue.value = !target
+    MessagePlugin.error(t('agentAdmin.enableFailed'))
+  } finally {
+    enabledLoading.value = false
+  }
+}
+
+/**
+ * Polish File
+ * AI 润色当前正在查看的文件：二次确认后调用同步接口，完成后重新拉取该文件内容
+ */
+function handlePolish() {
+  const current = detail.value
+  const file = activeFile.value
+  if (!current || !file || isPolishing.value || isEditing.value) return
+
+  const dialog = DialogPlugin.confirm({
+    header: t('agentAdmin.polishConfirmTitle'),
+    body: t('agentAdmin.polishConfirmBody', { file }),
+    theme: 'warning',
+    confirmBtn: { content: t('agentAdmin.polish') },
+    // 同步接口要跑几十秒，期间不允许通过关闭按钮 / 遮罩 / Esc 把它关掉造成误以为已取消
+    closeBtn: false,
+    closeOnOverlayClick: false,
+    closeOnEscKeydown: false,
+    onConfirm: async () => {
+      dialog.update({ confirmBtn: { content: t('agentAdmin.polishRunning'), loading: true } })
+      isPolishing.value = true
+      const startedAt = Date.now()
+      try {
+        const res = await props.api.polishAsset({ name: current.name, file })
+        const data = (res?.data ?? {}) as AssetPolishResult
+        if (res?.code !== 2000) {
+          MessagePlugin.error(res?.message ?? res?.msg ?? t('agentAdmin.polishFailed'))
+        } else if (data.ok === false) {
+          MessagePlugin.error(data.error || t('agentAdmin.polishFailed'))
+        } else {
+          MessagePlugin.success(
+            t('agentAdmin.polishSuccess', {
+              duration: formatDuration(data.duration ?? Date.now() - startedAt)
+            })
+          )
+          // 磁盘上的文件已被改写，重新拉取当前文件内容与文件清单
+          await loadDetail(current.name, true)
+          await loadList()
+        }
+      } catch {
+        MessagePlugin.error(t('agentAdmin.polishRetry'))
+      } finally {
+        isPolishing.value = false
+        dialog.hide()
+      }
+    }
+  })
 }
 
 /** 打开新建弹窗 */

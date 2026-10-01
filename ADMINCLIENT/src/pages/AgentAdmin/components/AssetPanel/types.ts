@@ -39,6 +39,8 @@ export interface AssetItem {
   size: number
   /** 最近更新时间 */
   updatedAt: string
+  /** 是否启用（读自主文档顶部 front matter 的 enabled，缺省为启用） */
+  enabled: boolean
 }
 
 /** 条目内的文件 */
@@ -66,6 +68,24 @@ export interface AssetDetail {
   /** 文件内容 */
   content: string
   files: AssetFile[]
+  /** 是否启用（恒定看主文档，与当前查看的文件无关） */
+  enabled: boolean
+}
+
+/** AI 润色结果（同步接口，后端真的改写了磁盘上的 md） */
+export interface AssetPolishResult {
+  name: string
+  /** 本次润色的文件（条目内相对路径） */
+  file: string
+  /** 文件在仓库内的相对路径 */
+  path: string
+  ok: boolean
+  exitCode: number | null
+  /** 耗时（毫秒） */
+  duration: number
+  output: string
+  files: { status: string; path: string }[]
+  error?: string
 }
 
 /**
@@ -86,4 +106,8 @@ export interface AssetApi {
   createAsset: (data: { name: string; title?: string }) => Promise<any>
   /** 删除条目 */
   removeAsset: (name: string) => Promise<any>
+  /** 启用 / 停用条目（写进主文档顶部 front matter） */
+  setAssetEnabled: (data: { name: string; enabled: boolean }) => Promise<any>
+  /** AI 润色条目内的某个文件（file 为条目内相对路径，不传润色主文档；同步接口，耗时较长） */
+  polishAsset: (data: { name: string; file?: string }) => Promise<any>
 }

@@ -1,4 +1,4 @@
-import { IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 /** 三类能力资产 */
 export const ASSET_KINDS = ['skill', 'agent', 'tool'] as const;
@@ -43,4 +43,18 @@ export class CreateAssetDto extends AssetNameDto {
     @IsString()
     @MaxLength(64)
     title?: string;
+}
+
+/** 启用/停用入参：写进主文档顶部的 front matter（enabled: true/false） */
+export class SetAssetEnabledDto extends AssetNameDto {
+    @IsBoolean({ message: 'enabled 必须是布尔值' })
+    enabled: boolean;
+}
+
+/** AI 润色入参：file 为条目内相对路径，缺省润色主文档 */
+export class PolishAssetDto extends AssetNameDto {
+    @IsOptional()
+    @IsString()
+    @MaxLength(200)
+    file?: string;
 }

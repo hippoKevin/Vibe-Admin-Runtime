@@ -69,6 +69,9 @@ const REPLY_LIMIT = 600;
 /** 简短回复通道的默认超时（比改代码短得多） */
 const REPLY_TIMEOUT = 90 * 1000;
 
+/** 同步任务（如 AI 润色单个文档）的默认超时 */
+const SYNC_TASK_TIMEOUT = 3 * 60 * 1000;
+
 /**
  * 开发模式服务：把一句话任务交给 DeepSeek Harness 执行
  *
@@ -304,6 +307,53 @@ export class DevAgentService {
         this.runs.unshift(record);
         if (this.runs.length > MAX_RUN_HISTORY) this.runs.length = MAX_RUN_HISTORY;
         return record;
+    }
+
+    /**
+     * 同步跑一次会改动文件的一次性任务（「AI 润色」这类）
+     *
+     * 与两个通道的区别：不等控制台聊天，而是等任务真的跑完再返回结果，
+     * 调用方（智能管理的润色按钮）拿到结果后重新拉一次文件内容即可。
+     */
+    async runSyncTask(prompt: string, timeoutMs: number = SYNC_TASK_TIMEOUT): Promise<DevAgentRunResult> {
+        const launcher = this.requireLauncher();
+        const cwd = this.resolveCwd();
+
+        this.running = true;
+        const startedAt = Date.now();
+
+        try {
+            const before = await this.collectChangedFiles(cwd);
+            const run = await this.spawnAgent(launcher, cwd, prompt, timeoutMs);
+            const after = await this.collectChangedFiles(cwd);
+            const beforeStatus = new Map(before.map((item) => [item.path, item.status]));
+
+            const result: DevAgentRunResult = {
+                ok: run.exitCode === 0,
+                exitCode: run.exitCode,
+                duration: Date.now() - startedAt,
+                output: this.tail(run.stdout, STDOUT_LIMIT),
+                reasoningTail: this.tail(run.stderr, STDERR_LIMIT),
+                files: after.filter((item) => beforeStatus.get(item.path) !== item.status),
+                finishedAt: new Date().toISOString(),
+                error: run.timedOut ? '执行超时，已被强制结束' : undefined,
+            };
+
+            this.lastRun = {
+                ...result,
+                id: String(startedAt),
+                channel: 'code',
+                prompt,
+                startedAt: new Date(startedAt).toISOString(),
+                running: false,
+            };
+            this.pushRun({ ...this.lastRun });
+
+            this.logger.log(`开发模式-同步任务结束：用时=${result.duration}ms 改动文件=${result.files.length}`);
+            return result;
+        } finally {
+            this.running = false;
+        }
     }
 
     /**

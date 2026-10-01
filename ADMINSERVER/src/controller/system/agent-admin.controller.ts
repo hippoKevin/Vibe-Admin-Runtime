@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, Query, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { AssetDetailDto, AssetKindDto, AssetNameDto, CreateAssetDto, SaveAssetDto } from 'src/dto/system/agent-admin/agent-admin.dto';
+import { AssetDetailDto, AssetKindDto, AssetNameDto, CreateAssetDto, PolishAssetDto, SaveAssetDto, SetAssetEnabledDto } from 'src/dto/system/agent-admin/agent-admin.dto';
 import { AgentAdminService } from 'src/services/system/agent-admin.service';
 
 /**
@@ -73,5 +73,25 @@ export class AgentAdminController {
     @UsePipes(new ValidationPipe())
     remove(@Body() body: AssetNameDto) {
         return this.agentAdminService.remove(body.kind, body.name);
+    }
+
+    /**
+     * 启用 / 停用（写进主文档顶部的 front matter）
+     */
+    @Post('/enabled')
+    @UseGuards(AuthGuard('jwt'))
+    @UsePipes(new ValidationPipe())
+    setEnabled(@Body() body: SetAssetEnabledDto) {
+        return this.agentAdminService.setEnabled(body.kind, body.name, body.enabled);
+    }
+
+    /**
+     * AI 润色：让 DSH 直接改写这份 md（保持结构、标题、表格与事实不变，只改措辞）
+     */
+    @Post('/polish')
+    @UseGuards(AuthGuard('jwt'))
+    @UsePipes(new ValidationPipe())
+    polish(@Body() body: PolishAssetDto) {
+        return this.agentAdminService.polish(body.kind, body.name, body.file);
     }
 }

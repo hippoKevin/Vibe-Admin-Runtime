@@ -106,6 +106,16 @@
     &--active {
       background: var(--td-brand-color-light);
     }
+
+    /* 已停用：正文整体降透明度（标签保持清晰），一眼能与启用项区分开 */
+    &--disabled {
+      .asset-panel__item-name,
+      .asset-panel__item-title,
+      .asset-panel__item-desc,
+      .asset-panel__item-meta {
+        opacity: 0.55;
+      }
+    }
   }
 
   &__item-head {
@@ -177,8 +187,10 @@
   &__detail-head {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     justify-content: space-between;
     gap: 12px;
+    row-gap: 8px;
     padding: 8px 12px;
     border-bottom: 1px solid var(--td-component-stroke);
   }
@@ -210,6 +222,24 @@
 
   &__alert {
     margin: 8px 12px 0;
+  }
+
+  /* 详情头部的启用开关 + 文字标签 */
+  &__enabled {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 6px;
+  }
+
+  &__enabled-label {
+    font-size: calc(12px * var(--app-font-scale, 1));
+    color: var(--td-text-color-secondary);
+    white-space: nowrap;
+
+    &--off {
+      color: var(--td-text-color-placeholder);
+    }
   }
 
   &__detail-body {

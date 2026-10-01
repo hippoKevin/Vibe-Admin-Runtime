@@ -28,6 +28,9 @@ const DESCRIPTION_LIMIT = 60;
 /** 详情里单个文件的返回内容上限（超过就截断，避免长文本撑爆接口） */
 const CONTENT_LIMIT = 200 * 1024;
 
+/** 主文档顶部的 YAML front matter（只认 enabled 一个键，其余原样保留） */
+const FRONT_MATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+
 /** 列表项 */
 export interface AssetItem {
     name: string;
@@ -38,6 +41,8 @@ export interface AssetItem {
     fileCount: number;
     size: number;
     updatedAt: string;
+    /** 是否启用（读自主文档顶部 front matter 的 enabled，缺省为启用） */
+    enabled: boolean;
 }
 
 /** 目录内文件 */
@@ -133,12 +138,18 @@ export class AgentAdminService {
         const target = this.resolveFile(dir, relative, true);
         const content = fs.existsSync(target) ? this.readText(target) : '';
 
+        // 启用状态始终看主文档（哪怕当前正在看别的文件）
+        const docFile = path.join(dir, docName);
+        const hasDoc = fs.existsSync(docFile);
+        const enabled = hasDoc ? this.readEnabled(this.readText(docFile)) : true;
+
         return {
             kind,
             name,
             docName,
             file: relative,
-            hasDoc: fs.existsSync(path.join(dir, docName)),
+            hasDoc,
+            enabled,
             path: dir,
             content,
             files: this.listFiles(dir),
@@ -187,6 +198,65 @@ export class AgentAdminService {
         this.logger.log(`新建资产：${path.relative(this.getAgentRoot(), dir)}`);
 
         return { name, kind, docName, created: true };
+    }
+
+    /**
+     * 启用 / 停用：写进主文档顶部的 front matter（enabled: true|false）
+     *
+     * 之所以写进 md 本身而不是另建配置文件：这份文档就是资产的全部，
+     * 谁拿到这个 md 都能一眼看出它有没有被启用。
+     */
+    setEnabled(kindRaw: string, nameRaw: string, enabled: boolean) {
+        const { dir, docName, name } = this.resolveItem(kindRaw, nameRaw);
+        const docFile = path.join(dir, docName);
+
+        if (!fs.existsSync(docFile)) {
+            throw new BusinessException(`条目「${name}」缺少主文档 ${docName}，无法标记启用状态`);
+        }
+
+        const content = this.readText(docFile);
+        const updated = this.writeEnabled(content, !!enabled);
+        if (updated !== content) fs.writeFileSync(docFile, updated, 'utf-8');
+
+        this.logger.log(`智能资产${enabled ? '启用' : '停用'}：${path.relative(this.getAgentRoot(), docFile)}`);
+        return { name, enabled: !!enabled, file: docName };
+    }
+
+    /**
+     * AI 润色：让 DSH 直接改写这份 md（保持结构、标题、表格与事实不变，只改措辞与表达）
+     */
+    async polish(kindRaw: string, nameRaw: string, fileRaw?: string) {
+        const { dir, docName, name } = this.resolveItem(kindRaw, nameRaw);
+        const relative = String(fileRaw || '').trim() || docName;
+        const target = this.resolveFile(dir, relative, true);
+
+        if (!fs.existsSync(target)) {
+            throw new BusinessException(`文件不存在：${relative}`);
+        }
+
+        const repoRoot = this.getRepoRoot();
+        const repoRelative = path.relative(repoRoot, target).replace(/\\/g, '/');
+
+        const prompt = [
+            `Polish the Markdown document at ${repoRelative}.`,
+            'Keep every heading, table row, list item, link and fact unchanged; only improve wording, clarity, tone and consistency.',
+            'Do not add or remove sections, do not translate it, and do not create new files.',
+            `Write the improved content back to the same file (${repoRelative}).`,
+        ].join('\n');
+
+        const result = await this.devAgentService.runSyncTask(prompt);
+
+        return {
+            name,
+            file: relative,
+            path: repoRelative,
+            ok: result.ok,
+            exitCode: result.exitCode,
+            duration: result.duration,
+            output: result.output,
+            files: result.files,
+            error: result.error,
+        };
     }
 
     /**
@@ -359,7 +429,41 @@ export class AgentAdminService {
             fileCount: files.length,
             size,
             updatedAt: updatedAt || new Date(0).toISOString(),
+            enabled: hasDoc ? this.readEnabled(content) : true,
         };
+    }
+
+    /** 读 front matter 里的 enabled，没写就当启用 */
+    private readEnabled(content: string): boolean {
+        const match = String(content || '').match(FRONT_MATTER_PATTERN);
+        if (!match) return true;
+
+        const value = match[1].match(/^\s*enabled\s*:\s*(true|false)\s*$/im);
+        return value ? value[1].toLowerCase() === 'true' : true;
+    }
+
+    /** 写回 enabled：已有 front matter 就地改这一行，没有就在文件最前面补一个 */
+    private writeEnabled(content: string, enabled: boolean): string {
+        const text = String(content || '');
+        const match = text.match(FRONT_MATTER_PATTERN);
+        const line = `enabled: ${enabled ? 'true' : 'false'}`;
+
+        if (match) {
+            const block = match[1];
+            const updated = /^\s*enabled\s*:/im.test(block)
+                ? block.replace(/^\s*enabled\s*:.*$/im, line)
+                : `${line}\n${block}`;
+            return text.replace(match[0], `---\n${updated}\n---\n`);
+        }
+
+        return `---\n${line}\n---\n\n${text}`;
+    }
+
+    /** 仓库根目录（DSH 任务的工作目录也是它，润色时要用相对路径告诉 Agent 改哪个文件） */
+    private getRepoRoot(): string {
+        return process.env.DSH_AGENT_CWD
+            ? path.resolve(process.env.DSH_AGENT_CWD)
+            : path.resolve(process.cwd(), '..');
     }
 
     private readText(file: string): string {
