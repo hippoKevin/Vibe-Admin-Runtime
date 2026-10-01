@@ -25,4 +25,19 @@ export class GenerateCodeDto {
     @IsOptional()
     @IsString()
     cwd?: string;
+
+    /** DSH profile（即界面上的「模式」，默认 headless） */
+    @IsOptional()
+    @IsString()
+    @MaxLength(64)
+    profile?: string;
+
+    /**
+     * DSH 会话 id：带上它就能在同一会话里连续追问（对话体验），
+     * 不传则每次都是全新会话；运行结果里会把实际 sessionId 返回给前端。
+     */
+    @IsOptional()
+    @IsString()
+    @MaxLength(128)
+    sessionId?: string;
 }

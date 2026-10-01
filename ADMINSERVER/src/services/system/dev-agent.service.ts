@@ -47,6 +47,22 @@ export interface DevAgentRunResult {
     files: DevAgentChangedFile[];
     finishedAt: string;
     error?: string;
+    /** DSH 会话 id（前端用它做连续对话） */
+    sessionId?: string | null;
+}
+
+/** DSH --json 事件（一行一条 NDJSON；字段随事件类型变化，这里只声明常用的几个） */
+export interface DshRunEvent {
+    type: string;
+    phase?: string;
+    turn?: number;
+    step?: number;
+    text?: string;
+    name?: string;
+    tool?: string;
+    status?: string;
+    sessionId?: string;
+    [key: string]: any;
 }
 
 /** 一条执行历史（独立控制台的「执行过程」面板用） */
@@ -58,10 +74,23 @@ export interface DevAgentRunRecord extends DevAgentRunResult {
     channel: DevAgentChannel;
     /** 是否仍在后台运行中（前端据此显示进度） */
     running?: boolean;
+    /** DSH 会话 id：同一条会话可以连续追问（对话体验） */
+    sessionId?: string | null;
+    /** 运行轨迹（DSH --json 事件流，已限量截断） */
+    events?: DshRunEvent[];
 }
 
 /** 最多保留多少条执行历史（内存态，重启即清空） */
 const MAX_RUN_HISTORY = 20;
+
+/** 轨迹最多保留多少条事件（避免长任务把响应体撑爆） */
+const MAX_EVENTS = 300;
+
+/** 单条事件里字符串字段的最大长度 */
+const EVENT_TEXT_LIMIT = 400;
+
+/** 默认使用的 DSH profile（前端可以覆盖，实现"模式"选择） */
+const DEFAULT_PROFILE = 'headless';
 
 /** 简短回复通道返回的最大长度（TTS 念太长的没意义） */
 const REPLY_LIMIT = 600;
@@ -94,10 +123,39 @@ export class DevAgentService {
     private readonly runs: DevAgentRunRecord[] = [];
 
     /**
+     * 本机 DSH 的 profile 列表（界面上「模式」下拉的数据源）
+     *
+     * 只有 headless 适合本控制台「跑一次就退出」的用法；
+     * web / desktop 是常驻应用，列出来仅供了解。
+     */
+    listProfiles() {
+        const home = process.env.DSH_HOME || path.join(process.env.USERPROFILE || process.env.HOME || '', '.dsh');
+        let names: string[] = [];
+
+        try {
+            names = fs
+                .readdirSync(path.join(home, 'profiles'), { withFileTypes: true })
+                .filter((item) => item.isDirectory() && !item.name.startsWith('.') && item.name !== 'node_modules')
+                .map((item) => item.name);
+        } catch {
+            names = [];
+        }
+
+        return {
+            home,
+            items: names.sort().map((name) => ({
+                name,
+                builtin: ['headless', 'web', 'desktop'].includes(name),
+                /** 是否适合本控制台的一次性任务（目前只有 headless） */
+                oneShot: name === DEFAULT_PROFILE,
+            })),
+        };
+    }
+
+    /**
      * 执行历史：给独立控制台的「执行过程」面板用
      */
-    getRuns() {
-        return {
+    getRuns() {        return {
             running: this.running,
             timeout: this.resolveTimeout(),
             cwd: this.resolveCwd(),
@@ -156,13 +214,16 @@ export class DevAgentService {
                 dto.prompt,
             ].join('\n');
 
-            const run = await this.spawnAgent(launcher, cwd, prompt, this.resolveReplyTimeout());
+            const run = await this.runAgent(launcher, cwd, prompt, this.resolveReplyTimeout(), {
+                profile: dto.profile,
+                sessionId: dto.sessionId,
+            });
             const after = await this.collectChangedFiles(cwd);
             const beforeStatus = new Map(before.map((item) => [item.path, item.status]));
             const files = after.filter((item) => beforeStatus.get(item.path) !== item.status);
 
             const answer =
-                this.tail(run.stdout, REPLY_LIMIT) ||
+                (run.answer.length > REPLY_LIMIT ? `${run.answer.slice(0, REPLY_LIMIT)}…` : run.answer) ||
                 (run.timedOut ? '（回复超时，请重试）' : '（没有拿到回复）');
 
             const result = {
@@ -172,6 +233,7 @@ export class DevAgentService {
                 exitCode: run.exitCode,
                 duration: Date.now() - startedAt,
                 files,
+                sessionId: run.sessionId,
                 finishedAt: new Date().toISOString(),
             };
 
@@ -187,6 +249,8 @@ export class DevAgentService {
                 output: answer,
                 reasoningTail: this.tail(run.stderr, STDERR_LIMIT),
                 files,
+                sessionId: run.sessionId,
+                events: run.events,
                 finishedAt: result.finishedAt,
             });
 
@@ -229,6 +293,7 @@ export class DevAgentService {
             output: '',
             reasoningTail: '',
             files: [],
+            sessionId: dto.sessionId || null,
             finishedAt: '',
         };
 
@@ -237,7 +302,10 @@ export class DevAgentService {
         this.pushRun(record);
 
         // 故意不 await：把控制权立刻交回前端
-        void this.executeBackground(launcher, cwd, dto.prompt, record, startedAt);
+        void this.executeBackground(launcher, cwd, dto.prompt, record, startedAt, {
+            profile: dto.profile,
+            sessionId: dto.sessionId,
+        });
         this.logger.log(`开发模式-后台任务已启动：id=${record.id}`);
 
         return {
@@ -256,10 +324,11 @@ export class DevAgentService {
         prompt: string,
         record: DevAgentRunRecord,
         startedAt: number,
+        options: { profile?: string; sessionId?: string } = {},
     ) {
         try {
             const before = await this.collectChangedFiles(cwd);
-            const run = await this.spawnAgent(launcher, cwd, prompt, this.resolveTimeout());
+            const run = await this.runAgent(launcher, cwd, prompt, this.resolveTimeout(), options);
             const after = await this.collectChangedFiles(cwd);
             const beforeStatus = new Map(before.map((item) => [item.path, item.status]));
 
@@ -267,8 +336,10 @@ export class DevAgentService {
             record.exitCode = run.exitCode;
             record.ok = run.exitCode === 0;
             record.duration = Date.now() - startedAt;
-            record.output = this.tail(run.stdout, STDOUT_LIMIT);
+            record.output = run.answer;
             record.reasoningTail = this.tail(run.stderr, STDERR_LIMIT);
+            record.sessionId = run.sessionId || record.sessionId || null;
+            record.events = run.events;
             record.finishedAt = new Date().toISOString();
             record.running = false;
             record.error = run.timedOut ? '执行超时，已被强制结束' : undefined;
@@ -315,7 +386,11 @@ export class DevAgentService {
      * 与两个通道的区别：不等控制台聊天，而是等任务真的跑完再返回结果，
      * 调用方（智能管理的润色按钮）拿到结果后重新拉一次文件内容即可。
      */
-    async runSyncTask(prompt: string, timeoutMs: number = SYNC_TASK_TIMEOUT): Promise<DevAgentRunResult> {
+    async runSyncTask(
+        prompt: string,
+        timeoutMs: number = SYNC_TASK_TIMEOUT,
+        options: { profile?: string; sessionId?: string } = {},
+    ): Promise<DevAgentRunResult> {
         const launcher = this.requireLauncher();
         const cwd = this.resolveCwd();
 
@@ -324,7 +399,7 @@ export class DevAgentService {
 
         try {
             const before = await this.collectChangedFiles(cwd);
-            const run = await this.spawnAgent(launcher, cwd, prompt, timeoutMs);
+            const run = await this.runAgent(launcher, cwd, prompt, timeoutMs, options);
             const after = await this.collectChangedFiles(cwd);
             const beforeStatus = new Map(before.map((item) => [item.path, item.status]));
 
@@ -332,9 +407,10 @@ export class DevAgentService {
                 ok: run.exitCode === 0,
                 exitCode: run.exitCode,
                 duration: Date.now() - startedAt,
-                output: this.tail(run.stdout, STDOUT_LIMIT),
+                output: run.answer,
                 reasoningTail: this.tail(run.stderr, STDERR_LIMIT),
                 files: after.filter((item) => beforeStatus.get(item.path) !== item.status),
+                sessionId: run.sessionId,
                 finishedAt: new Date().toISOString(),
                 error: run.timedOut ? '执行超时，已被强制结束' : undefined,
             };
@@ -346,6 +422,7 @@ export class DevAgentService {
                 prompt,
                 startedAt: new Date(startedAt).toISOString(),
                 running: false,
+                events: run.events,
             };
             this.pushRun({ ...this.lastRun });
 
@@ -357,12 +434,97 @@ export class DevAgentService {
     }
 
     /**
+     * 跑一次 Agent，并把 --json 事件流解析成轨迹
+     */
+    private async runAgent(
+        launcher: DshLauncher,
+        cwd: string,
+        prompt: string,
+        timeout: number,
+        options: { profile?: string; sessionId?: string } = {},
+    ) {
+        const run = await this.spawnAgent(launcher, cwd, prompt, timeout, options);
+        const { events, text, sessionId } = this.parseRunEvents(run.stdout);
+
+        return {
+            ...run,
+            events,
+            sessionId,
+            // 最终答复优先取 final/text 事件，拿不到再退回 stdout 尾部
+            answer: text || this.tail(run.stdout, STDOUT_LIMIT),
+        };
+    }
+
+    /** 解析 DSH --json 的 NDJSON 事件流 */
+    private parseRunEvents(stdout: string) {
+        const events: DshRunEvent[] = [];
+        let text = '';
+        let sessionId: string | null = null;
+
+        for (const line of String(stdout || '').split(/\r?\n/)) {
+            const raw = line.trim();
+            if (!raw.startsWith('{')) continue;
+
+            let event: DshRunEvent;
+            try {
+                event = JSON.parse(raw);
+            } catch {
+                continue;
+            }
+            if (!event || typeof event !== 'object' || !event.type) continue;
+
+            if (event.type === 'session' && event.sessionId) sessionId = String(event.sessionId);
+            if ((event.type === 'final' || event.type === 'text') && typeof event.text === 'string') {
+                text = event.text;
+            }
+
+            events.push(this.trimEvent(event));
+        }
+
+        return {
+            events: events.length > MAX_EVENTS ? events.slice(events.length - MAX_EVENTS) : events,
+            text: text.trim(),
+            sessionId,
+        };
+    }
+
+    /** 事件只保留可展示的标量字段并截断长文本，避免响应体过大 */
+    private trimEvent(event: DshRunEvent): DshRunEvent {
+        const result: DshRunEvent = { type: String(event.type) };
+
+        for (const [key, value] of Object.entries(event)) {
+            if (key === 'type') continue;
+
+            if (typeof value === 'string') {
+                result[key] = value.length > EVENT_TEXT_LIMIT ? `${value.slice(0, EVENT_TEXT_LIMIT)}…` : value;
+                continue;
+            }
+            if (typeof value === 'number' || typeof value === 'boolean' || value === null) {
+                result[key] = value;
+            }
+            // 对象/数组类型的事件字段先不传，轨迹面板用不到，也避免体积失控
+        }
+
+        return result;
+    }
+
+    /**
      * 以「Electron 可执行文件 + cli.js + 参数数组」的方式启动，不经过 shell
      */
-    private spawnAgent(launcher: DshLauncher, cwd: string, prompt: string, timeout: number) {
+    private spawnAgent(
+        launcher: DshLauncher,
+        cwd: string,
+        prompt: string,
+        timeout: number,
+        options: { profile?: string; sessionId?: string } = {},
+    ) {
         return new Promise<{ exitCode: number | null; stdout: string; stderr: string; timedOut: boolean }>(
             (resolve, reject) => {
-                const args = ['--expose-internals', launcher.cli, '--profile', 'headless', prompt];
+                const profile = String(options.profile || '').trim() || DEFAULT_PROFILE;
+                // 顺序：启动器参数 → 应用参数（--session-id / --json）→ 任务文本
+                const args = ['--expose-internals', launcher.cli, '--profile', profile];
+                if (options.sessionId) args.push('--session-id', String(options.sessionId));
+                args.push('--json', prompt);
 
                 const child = spawn(launcher.exe, args, {
                     cwd,

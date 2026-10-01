@@ -28,6 +28,15 @@ export class DevAgentController {
     }
 
     /**
+     * 可选「模式」：本机 DSH 的 profile 列表（headless / web / desktop…）
+     */
+    @Get('/profiles')
+    @UseGuards(AuthGuard('jwt'))
+    getProfiles() {
+        return this.devAgentService.listProfiles();
+    }
+
+    /**
      * 执行历史：控制台「执行过程」面板用
      */
     @Get('/runs')
