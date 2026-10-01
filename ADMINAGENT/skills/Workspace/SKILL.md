@@ -1,3 +1,7 @@
+---
+enabled: true
+---
+
 # Workspace · 工作区边界与可回退提交
 
 | 项 | 值 |
