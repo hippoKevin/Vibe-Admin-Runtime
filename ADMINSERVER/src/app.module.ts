@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { JwtModule } from '@nestjs/jwt';
 // 数据库
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MenuModule } from './module/system/menu.module';
@@ -19,10 +18,12 @@ import { AgentAdminModule } from './module/system/agent-admin.module';
     // 读取 .env 环境变量（isGlobal: true 让全局可注入 ConfigService）
     ConfigModule.forRoot({ isGlobal: true }),
     PassportModule.register({ defaultStrategy: 'jwt' }),
-    JwtModule.register({
-      secret: process.env.JWT_SECRET || 'hippoadmin',
-      signOptions: { expiresIn: '1h' },
-    }),
+    // 注意：JwtModule 不在这里注册。
+    // 全局守卫 AuthGuard（APP_GUARD，定义在 src/module/system/common.module.ts）
+    // 和 CommonService（登录/校验/刷新 token）都声明在 CommonModule 内部，
+    // 它们注入的 JwtService 来自 CommonModule 自己 import 的 JwtModule，
+    // 因此这里再 register 一份是无效的重复注册（实测也会被忽略）。
+    // 唯一的 JwtModule 注册处在：src/module/system/common.module.ts 的 JwtModule.registerAsync。
     // 数据库连接：全部从 .env 读取，未配置时默认使用本机 127.0.0.1
     TypeOrmModule.forRoot({
       name: 'etp_default_sql',

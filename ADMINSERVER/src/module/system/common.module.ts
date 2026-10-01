@@ -28,6 +28,11 @@ import { FilesService } from "src/services/system/file/file.service";
     imports: [
         ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env.development' }),
         PassportModule.register({ defaultStrategy: 'jwt' }),
+        // 全项目唯一的 JwtModule 注册处（含全局守卫 AuthGuard 与 CommonService 的 JwtService）。
+        // 过期时间 = 12h：这是历史上真正生效的值（实测登录 token 的 exp - iat = 43200s），
+        // 之所以是这个值，是因为守卫和 CommonService 都在本模块内，注入的是本模块的 JwtService；
+        // app.module.ts 里曾经那份 expiresIn:'1h' 的注册从未被任何 provider 使用，已删除。
+        // 如需调整登录有效期，只改这里（同时注意 secret 读取的是 .env.development 的 JWT_SECRET）。
         JwtModule.registerAsync({
             useFactory: (configService: ConfigService) => ({
                 secret: configService.get<string>('JWT_SECRET'),

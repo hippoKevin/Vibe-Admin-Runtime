@@ -11,7 +11,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
             // 从 Authorization: Bearer <token> 中提取
             jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
             ignoreExpiration: false,
-            secretOrKey: process.env.JWT_SECRET ?? 'hippoadmin', // 和 JwtModule 里的 secret 保持一致
+            secretOrKey: process.env.JWT_SECRET ?? 'hippoadmin', // 必须与 src/module/system/common.module.ts 的 JwtModule.registerAsync 保持一致（值来自 .env.development 的 JWT_SECRET）
         });
     }
 
