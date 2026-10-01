@@ -128,6 +128,59 @@ const CLIENT = {
 
 
 // ==========================
+// IndexTTS（可选语音合成服务）
+// ==========================
+
+// IndexTTS 放在仓库根 ADMINTTS/ 下（可用 INDEX_TTS_HOME 覆盖），缺失时只提示、不影响前后端
+const TTS_HOME = process.env.INDEX_TTS_HOME
+  ? path.resolve(String(process.env.INDEX_TTS_HOME).trim())
+  : path.join(ROOT, 'ADMINTTS');
+
+// 复用独立启动脚本，保证启动逻辑只有一份
+const TTS_SCRIPT = path.join(__dirname, 'start_index_tts.js');
+
+// node quick_start.js --no-tts    跳过 IndexTTS
+// node quick_start.js --tts-only  只启动 IndexTTS
+const NO_TTS = process.argv.includes('--no-tts');
+const TTS_ONLY = process.argv.includes('--tts-only');
+
+// node quick_start.js --dry-run   只打印解析出的配置，不启动任何服务
+const DRY_RUN = process.argv.includes('--dry-run');
+
+/** 读取 --key value / --key=value 形式的参数值 */
+function readArgValue(name, fallback) {
+  const argv = process.argv;
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i];
+    if (!token.startsWith(name)) continue;
+
+    if (token === name) {
+      const next = argv[i + 1];
+      if (next && !next.startsWith('--')) return next;
+      return fallback;
+    }
+
+    if (token.startsWith(`${name}=`)) return token.slice(name.length + 1);
+  }
+
+  return fallback;
+}
+
+const TTS = {
+  name: 'TTS',
+  port: Number(readArgValue('--tts-port', 7860)) || 7860,
+  // 首次启动要加载模型，给足等待时间
+  timeout: Number(readArgValue('--tts-timeout', 600)) || 600,
+  logFile: path.join(TTS_HOME, 'logs', 'index-tts.log')
+};
+
+const ttsState = {
+  status: NO_TTS ? 'skipped' : 'pending'
+};
+
+
+// ==========================
 // 依赖检查 / 自动安装
 // ==========================
 
@@ -433,13 +486,21 @@ function extractClientUrl(text) {
 }
 
 function printStartupInfo() {
-  console.log([
+  const lines = [
     '================================================',
     ' HC ETP 已启动',
     ` Backend:  ${BACKEND_URL}`,
-    ` Frontend: ${runtimeClientUrl}`,
-    '================================================'
-  ].join('\n'));
+    ` Frontend: ${runtimeClientUrl}`
+  ];
+
+  if (!NO_TTS) {
+    lines.push(` TTS:      ${ttsStatusText()}`);
+    if (ttsState.status !== 'missing') lines.push(` TTS 日志: ${TTS.logFile}`);
+  }
+
+  lines.push('================================================');
+
+  console.log(lines.join('\n'));
 }
 
 function startClient() {
@@ -507,6 +568,117 @@ function startClient() {
 
 
 // ==========================
+// 启动 IndexTTS（后台，不阻塞主流程）
+// ==========================
+
+function ttsUrl() {
+  return `http://127.0.0.1:${TTS.port}`;
+}
+
+/**
+ * 后台拉起 IndexTTS，失败只提示，不影响前后端。
+ * 用 --supervise 让包装进程一直活着，退出时 taskkill /t 能连 Python 一起清掉。
+ */
+function startTts() {
+  if (NO_TTS) {
+    console.log('[TTS] 已按 --no-tts 跳过 IndexTTS');
+    return null;
+  }
+
+  if (!fs.existsSync(path.join(TTS_HOME, 'webui.py')) && !fs.existsSync(path.join(TTS_HOME, 'dsh_tts_launch.py'))) {
+    console.log('[TTS] 未找到 ADMINTTS，跳过 IndexTTS（可用 --no-tts 静默）');
+    ttsState.status = 'missing';
+    return null;
+  }
+
+  if (!fs.existsSync(TTS_SCRIPT)) {
+    console.log(`[TTS] 未找到启动脚本 ${TTS_SCRIPT}，跳过 IndexTTS`);
+    ttsState.status = 'missing';
+    return null;
+  }
+
+  console.log(`[TTS] 正在后台启动 IndexTTS（端口 ${TTS.port}）...`);
+  console.log(`[TTS] 日志：${TTS.logFile}`);
+
+  const child = spawn(process.execPath, [
+    TTS_SCRIPT,
+    '--port', String(TTS.port),
+    '--timeout', String(TTS.timeout),
+    '--supervise'
+  ], {
+    cwd: ROOT,
+    shell: false,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, FORCE_COLOR: '1' }
+  });
+
+  processes.push(child);
+  ttsState.status = 'starting';
+  ttsState.pid = child.pid;
+
+  const handle = (data, stream) => {
+    const text = data.toString();
+
+    for (const line of text.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      stream.write(`[TTS] ${line}\n`);
+    }
+
+    if (/已就绪|已在运行/.test(text)) {
+      ttsState.status = 'ready';
+    }
+
+    if (/未找到 IndexTTS 目录/.test(text)) {
+      ttsState.status = 'missing';
+    }
+  };
+
+  child.stdout.on('data', (data) => handle(data, process.stdout));
+  child.stderr.on('data', (data) => handle(data, process.stderr));
+
+  // TTS 是可选服务：它退出不触发整体关闭
+  child.on('error', (err) => {
+    ttsState.status = 'failed';
+    console.log(`[TTS] 启动失败：${err.message}（不影响前后端）`);
+  });
+
+  child.on('exit', (code) => {
+    if (ttsState.status !== 'ready') ttsState.status = 'failed';
+    console.log(`[TTS] 已退出 ${code}（不影响前后端）`);
+  });
+
+  return child;
+}
+
+function ttsStatusText() {
+  if (NO_TTS) return '已跳过 (--no-tts)';
+  if (ttsState.status === 'missing') return '未找到 ADMINTTS，已跳过';
+  if (ttsState.status === 'ready') return ttsUrl();
+  if (ttsState.status === 'failed') return `启动失败，详见日志 ${TTS.logFile}`;
+  return `${ttsUrl()} （启动中，加载模型需要几分钟）`;
+}
+
+/** --dry-run：只打印解析结果，便于确认参数而不真正拉起服务 */
+function printDryRunConfig() {
+  const ttsHomeReady = fs.existsSync(path.join(TTS_HOME, 'webui.py'))
+    || fs.existsSync(path.join(TTS_HOME, 'dsh_tts_launch.py'));
+
+  console.log('[DryRun] 仅打印配置，不启动任何服务');
+  console.log(`[DryRun] Backend      -> ${BACKEND_URL}`);
+  console.log(`[DryRun] Frontend     -> http://${CLIENT_HOST}:${CLIENT_PORT}`);
+  console.log(`[DryRun] --no-tts     -> ${NO_TTS}`);
+  console.log(`[DryRun] --tts-only   -> ${TTS_ONLY}`);
+  console.log(`[DryRun] --skip-install -> ${SKIP_INSTALL}`);
+  console.log(`[DryRun] TTS 目录     -> ${TTS_HOME}（存在: ${ttsHomeReady}）`);
+  console.log(`[DryRun] TTS 启动脚本 -> ${TTS_SCRIPT}（存在: ${fs.existsSync(TTS_SCRIPT)}）`);
+  console.log(`[DryRun] TTS 端口     -> ${TTS.port}`);
+  console.log(`[DryRun] TTS 超时     -> ${TTS.timeout}s`);
+  console.log(`[DryRun] TTS 日志     -> ${TTS.logFile}`);
+  console.log(`[DryRun] TTS 地址     -> ${ttsUrl()}`);
+}
+
+
+// ==========================
 // 关闭所有服务
 // ==========================
 
@@ -545,8 +717,22 @@ process.on('SIGTERM', shutdown);
 (async () => {
   printBanner();
 
+  if (DRY_RUN) {
+    printDryRunConfig();
+    return;
+  }
+
+  if (TTS_ONLY) {
+    console.log('[QuickStart] --tts-only：只启动 IndexTTS（不启动前后端）');
+    startTts();
+    return;
+  }
+
   console.log(`[ENV] Backend  -> ${BACKEND_URL}`);
   console.log(`[ENV] Frontend -> http://${CLIENT_HOST}:${CLIENT_PORT}`);
+
+  // 先起 TTS：后台异步加载模型，不阻塞前后端
+  startTts();
 
   await ensureDependencies();
 
