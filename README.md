@@ -25,6 +25,10 @@ HC ETP 是一个面向学习和研究的全栈企业后台开发项目。
 * 权限管理
 * AI Agent 辅助开发
 
+架构与实现细节、以及「已知约束与坑」统一记录在：
+
+👉 [ARCHITECTURE.md](./ARCHITECTURE.md)（架构总览；其中 §11「已知约束与坑（务必读）」是排查问题前的第一站）
+
 ---
 
 # ⚠️ 使用声明
@@ -146,6 +150,18 @@ QuickStart 用于统一启动整个开发环境。
 quick_start.bat
 ```
 
+等价于在仓库根目录执行：
+
+```bash
+node QuickStart/quick_start.js
+```
+
+可选：需要本地语音合成（IndexTTS，端口 7860）时，可单独启动（`--supervise` 让包装进程常驻，退出时能连 Python 子进程一起清理）：
+
+```bash
+node QuickStart/start_index_tts.js --supervise
+```
+
 启动流程：
 
 ```text
@@ -163,12 +179,17 @@ QuickStart
 
 ```text
 Backend:
-http://localhost:3000
-
+http://localhost:5004
 
 Frontend:
-http://localhost:5173
+http://localhost:5009
 ```
+
+端口说明：
+
+* 后端（NestJS）监听 `5004`（`ADMINSERVER/src/main.ts` 中 `process.env.PORT || 5004`）。
+* 前端（Vite 开发服务器）监听 `5009`（`ADMINCLIENT/.env.development` 里的 `VITE_OPEN_CLIENT_PORT`）。
+* 前端通过 Vite 代理把 `/proxy` 和 `/hippoadmin` 转发到后端 `127.0.0.1:5004`（见 `ADMINCLIENT/vite.config.ts`），所以页面内请求后端走的是 5009 同源代理，无需直连 5004。
 
 ---
 
