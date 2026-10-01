@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, Query, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { AssetDetailDto, AssetKindDto, AssetNameDto, CreateAssetDto, PolishAssetDto, SaveAssetDto, SetAssetEnabledDto } from 'src/dto/system/agent-admin/agent-admin.dto';
+import { AssetDetailDto, AssetKindDto, AssetNameDto, CreateAssetDto, CreateNodeDto, PolishAssetDto, SaveAssetDto, SetAssetEnabledDto } from 'src/dto/system/agent-admin/agent-admin.dto';
 import { AgentAdminService } from 'src/services/system/agent-admin.service';
 
 /**
@@ -76,13 +76,23 @@ export class AgentAdminController {
     }
 
     /**
-     * 启用 / 停用（写进主文档顶部的 front matter）
+     * 启用 / 停用：只改**当前这个文件**（写进它顶部的 front matter）
      */
     @Post('/enabled')
     @UseGuards(AuthGuard('jwt'))
     @UsePipes(new ValidationPipe())
     setEnabled(@Body() body: SetAssetEnabledDto) {
-        return this.agentAdminService.setEnabled(body.kind, body.name, body.enabled);
+        return this.agentAdminService.setEnabled(body.kind, body.name, body.enabled, body.file);
+    }
+
+    /**
+     * 在条目目录里新建子目录 / 文件（例如在 Backend 下建 workflow 目录，再建 workflow.md）
+     */
+    @Post('/node')
+    @UseGuards(AuthGuard('jwt'))
+    @UsePipes(new ValidationPipe())
+    createNode(@Body() body: CreateNodeDto) {
+        return this.agentAdminService.createNode(body.kind, body.name, body.parent, body.nodeType, body.nodeName);
     }
 
     /**

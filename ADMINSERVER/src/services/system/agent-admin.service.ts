@@ -138,10 +138,10 @@ export class AgentAdminService {
         const target = this.resolveFile(dir, relative, true);
         const content = fs.existsSync(target) ? this.readText(target) : '';
 
-        // 启用状态始终看主文档（哪怕当前正在看别的文件）
+        // 启用状态看**当前这个文件**：这样"只改当前选中文件"才成立
         const docFile = path.join(dir, docName);
         const hasDoc = fs.existsSync(docFile);
-        const enabled = hasDoc ? this.readEnabled(this.readText(docFile)) : true;
+        const enabled = fs.existsSync(target) ? this.readEnabled(content) : true;
 
         return {
             kind,
@@ -206,20 +206,76 @@ export class AgentAdminService {
      * 之所以写进 md 本身而不是另建配置文件：这份文档就是资产的全部，
      * 谁拿到这个 md 都能一眼看出它有没有被启用。
      */
-    setEnabled(kindRaw: string, nameRaw: string, enabled: boolean) {
+    /**
+     * 启用 / 停用**指定文件**：写进该文件顶部的 front matter（enabled: true|false）
+     *
+     * 之所以写进 md 本身而不是另建配置文件：这份文档就是资产的全部，
+     * 谁拿到这个 md 都能一眼看出它有没有被启用；并且只改这一个文件，不影响同目录其它文件。
+     */
+    setEnabled(kindRaw: string, nameRaw: string, enabled: boolean, fileRaw?: string) {
         const { dir, docName, name } = this.resolveItem(kindRaw, nameRaw);
-        const docFile = path.join(dir, docName);
+        const relative = String(fileRaw || '').trim() || docName;
+        const target = this.resolveFile(dir, relative, true);
 
-        if (!fs.existsSync(docFile)) {
-            throw new BusinessException(`条目「${name}」缺少主文档 ${docName}，无法标记启用状态`);
+        if (!fs.existsSync(target)) {
+            throw new BusinessException(`文件不存在：${relative}`);
         }
 
-        const content = this.readText(docFile);
+        const content = this.readText(target);
         const updated = this.writeEnabled(content, !!enabled);
-        if (updated !== content) fs.writeFileSync(docFile, updated, 'utf-8');
+        if (updated !== content) fs.writeFileSync(target, updated, 'utf-8');
 
-        this.logger.log(`智能资产${enabled ? '启用' : '停用'}：${path.relative(this.getAgentRoot(), docFile)}`);
-        return { name, enabled: !!enabled, file: docName };
+        this.logger.log(`智能资产${enabled ? '启用' : '停用'}：${path.relative(this.getAgentRoot(), target)}`);
+        return { name, enabled: !!enabled, file: relative };
+    }
+
+    /**
+     * 在条目目录里新建子目录或文件
+     *
+     * @param parentRaw 条目内相对目录，空字符串表示条目根目录；例如 `workflow`
+     * @param nodeTypeBody `dir` = 目录 / `file` = 文件（文件没有后缀时自动补 .md）
+     * @param nodeNameRaw 名称
+     */
+    createNode(kindRaw: string, nameRaw: string, parentRaw: string, nodeTypeBody: string, nodeNameRaw: string) {
+        const { dir, name } = this.resolveItem(kindRaw, nameRaw);
+        const parent = String(parentRaw || '')
+            .trim()
+            .replace(/\\/g, '/')
+            .replace(/^\/+|\/+$/g, '');
+
+        // 父目录同样走白名单与穿越校验（借道一个占位文件名拿到父目录）
+        const parentDir = parent ? path.dirname(this.resolveFile(dir, `${parent}/placeholder.md`, true)) : dir;
+        if (!fs.existsSync(parentDir) || !fs.statSync(parentDir).isDirectory()) {
+            throw new BusinessException(`目录不存在：${parent || '（条目根目录）'}`);
+        }
+
+        const type = nodeTypeBody === 'dir' ? 'dir' : 'file';
+        let nodeName = String(nodeNameRaw || '').trim();
+
+        if (!NAME_PATTERN.test(nodeName)) {
+            throw new BusinessException('名称只能由字母数字开头，且只含字母、数字、点、下划线、短横线');
+        }
+        if (type === 'file' && !path.extname(nodeName)) nodeName = `${nodeName}.md`;
+
+        const target = path.resolve(parentDir, nodeName);
+        this.assertInside(dir, target);
+
+        if (fs.existsSync(target)) {
+            throw new BusinessException(`已存在：${nodeName}`);
+        }
+
+        if (type === 'dir') {
+            fs.mkdirSync(target, { recursive: true });
+        } else {
+            fs.writeFileSync(target, this.buildFileTemplate(nodeName), 'utf-8');
+        }
+
+        const relativePath = path.relative(dir, target).replace(/\\/g, '/');
+        this.logger.log(
+            `智能资产新建${type === 'dir' ? '目录' : '文件'}：${path.relative(this.getAgentRoot(), target)}`,
+        );
+
+        return { created: true, path: relativePath, nodeType: type, name };
     }
 
     /**
@@ -238,10 +294,11 @@ export class AgentAdminService {
         const repoRelative = path.relative(repoRoot, target).replace(/\\/g, '/');
 
         const prompt = [
-            `Polish the Markdown document at ${repoRelative}.`,
+            `Polish exactly ONE Markdown document: ${repoRelative}`,
+            'Modify ONLY that file. Do not create, edit, move, rename or delete any other file.',
             'Keep every heading, table row, list item, link and fact unchanged; only improve wording, clarity, tone and consistency.',
-            'Do not add or remove sections, do not translate it, and do not create new files.',
-            `Write the improved content back to the same file (${repoRelative}).`,
+            'Do not add or remove sections and do not translate it.',
+            `Write the improved content back to ${repoRelative}.`,
         ].join('\n');
 
         const result = await this.devAgentService.runSyncTask(prompt);
@@ -431,6 +488,12 @@ export class AgentAdminService {
             updatedAt: updatedAt || new Date(0).toISOString(),
             enabled: hasDoc ? this.readEnabled(content) : true,
         };
+    }
+
+    /** 新建文件时的初始内容 */
+    private buildFileTemplate(fileName: string): string {
+        const title = fileName.replace(/\.md$/i, '');
+        return `# ${title}\n\n> 由「智能管理」新建，请补充内容。\n\n## 说明\n\n- \n`;
     }
 
     /** 读 front matter 里的 enabled，没写就当启用 */

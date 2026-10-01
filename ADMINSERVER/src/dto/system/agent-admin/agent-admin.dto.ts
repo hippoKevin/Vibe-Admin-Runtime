@@ -45,10 +45,33 @@ export class CreateAssetDto extends AssetNameDto {
     title?: string;
 }
 
-/** 启用/停用入参：写进主文档顶部的 front matter（enabled: true/false） */
+/** 启用/停用入参：默认改主文档，传了 file 就只改这个文件 */
 export class SetAssetEnabledDto extends AssetNameDto {
     @IsBoolean({ message: 'enabled 必须是布尔值' })
     enabled: boolean;
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(200)
+    file?: string;
+}
+
+/** 在条目目录里新建目录 / 文件 */
+export class CreateNodeDto extends AssetNameDto {
+    /** 条目内相对目录，空表示条目根目录（例如 workflow） */
+    @IsOptional()
+    @IsString()
+    @MaxLength(200)
+    parent?: string;
+
+    /** dir = 目录 / file = 文件 */
+    @IsIn(['dir', 'file'], { message: 'nodeType 只能是 dir 或 file' })
+    nodeType: string;
+
+    @IsString()
+    @IsNotEmpty({ message: 'nodeName 不能为空' })
+    @MaxLength(64)
+    nodeName: string;
 }
 
 /** AI 润色入参：file 为条目内相对路径，缺省润色主文档 */
