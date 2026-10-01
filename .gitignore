@@ -13,6 +13,9 @@ logs/
 *.log
 # 系统运维保存 .env 前自动生成的备份
 backup/
+# TTS 管理页落盘的运行时个人偏好（音色/语言及 21 个参数）：
+# 属于本机个人设置，且文件缺失/损坏时后端会自动回退默认值（tts.service.ts 的 getDefaultConfig），故不入库
+ADMINAGENT/tts-config.json
 
 # ==================== 构建/校验用的临时目录 ====================
 .build-tmp/
