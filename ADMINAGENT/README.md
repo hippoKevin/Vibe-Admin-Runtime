@@ -9,6 +9,11 @@
 | `agent/` | **Agent 管理**：Agent 的人设、职责边界、可挂载的技能与工具清单 | 本目录的 `README.md` |
 | `tools/` | **工具管理**：Agent 能调用的具体动作（读写文件、调接口、跑脚本…） | 本目录的 `README.md` |
 
+> `skills/Workspace` 是**优先级最高**的技能：harness 在本机是全权限运行的，
+> 这个技能规定它**只允许改动本工作区内的文件**，并且**每次改动都必须留下 git 记录**、
+> 任何时刻都能用提交 sha 拉回（配套脚本 `skills/Workspace/scripts/commit-workspace.mjs`
+> 会做边界、黑名单与体积检查，并打印 `git revert` 之类的回退命令）。
+
 ## 为什么这么分
 
 - **skill ≠ tool**：技能是「做法/规范」（提示词形态，教 Agent 怎么思考），工具是「能力」（代码形态，让 Agent 真能动手）。

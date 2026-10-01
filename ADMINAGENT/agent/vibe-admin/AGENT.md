@@ -10,6 +10,7 @@
 ## 挂载技能
 | 技能 | 用途 |
 | --- | --- |
+| `skills/Workspace` | **最高优先级**：只改工作区内的文件 + 每次改动都提交 git（随时可回退）；与其它技能冲突时以它为准 |
 | `skills/Frontend` | 页面骨架、api.ts 分层、i18n、BEM 与 --td-* 变量、字号必须 calc(var(--app-font-scale))、ECharts 只注册了 Line/Pie/Bar |
 | `skills/Frontend/workflow/new-page.md` | 新增页面到提交的完整流程（含菜单登记） |
 | `skills/Backend` | 统一响应与 BusinessException、鉴权与权限、DTO/实体规范、pnpm 隔离布局下必须显式声明依赖 |
