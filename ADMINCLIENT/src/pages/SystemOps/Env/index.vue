@@ -1,8 +1,10 @@
 <template>
   <t-card class="container">
-    <!-- 工具条：文件选择 + 操作按钮 -->
+    <!-- 工具条：文件选择 + 操作按钮。
+         这里用显式 flex 做纵向居中：t-space 默认是 inline-flex，按文字基线对齐，
+         末尾的「重启服务」按钮会和其它按钮错开一截 -->
     <template #title>
-      <t-space align="center" break-line>
+      <div class="system-ops-env__toolbar">
         <t-select
           v-model="envForm.file"
           class="system-ops-env__field"
@@ -32,7 +34,7 @@
         <t-button theme="danger" variant="outline" :loading="envSaving" @click="handleRestartSystem">
           {{ $t('systemOpsEnv.restartNow') }}
         </t-button>
-      </t-space>
+      </div>
     </template>
 
     <template #default>

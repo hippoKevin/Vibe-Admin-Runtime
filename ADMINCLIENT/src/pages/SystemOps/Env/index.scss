@@ -19,6 +19,18 @@
   width: 260px;
 }
 
+/* 标题栏工具条：所有控件（含最后的「重启服务」）共用一条垂直中轴线。
+   不用 t-space 的原因：它是 inline-flex，会和卡片标题的文字基线对齐，
+   末尾按钮因此比其它按钮低一截。 */
+.system-ops-env__toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  /* 与 t-button / t-select 的默认高度一致，行内所有控件同高 */
+  min-height: 32px;
+}
+
 .system-ops-env__switch-label {
   font-size: calc(13px * var(--app-font-scale, 1));
   color: var(--td-text-color-secondary);
