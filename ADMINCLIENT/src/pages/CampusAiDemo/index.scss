@@ -83,7 +83,7 @@
 /* 图表容器：固定高度 + autoresize（高度也跟随全局字号缩放，避免放大字号后图表被压扁） */
 .campus-ai__chart {
   width: 100%;
-  height: calc(300px * var(--app-font-scale, 1));
+  height: calc(250px * var(--app-font-scale, 1));
 }
 
 .campus-ai__table {
@@ -117,8 +117,8 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-height: 220px;
-  max-height: 320px;
+  min-height: 132px;
+  max-height: 240px;
   padding: 12px 0;
   overflow-y: auto;
 }

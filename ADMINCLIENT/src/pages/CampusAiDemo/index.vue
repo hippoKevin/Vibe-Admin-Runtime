@@ -10,7 +10,8 @@
     </template>
 
     <template #default>
-      <t-tabs v-model="activeTab" data-testid="campus-ai-tabs">
+      <!-- 页面自己的块名：既方便样式，也让自动化测试能把它和顶栏的「路由标签」区分开 -->
+      <t-tabs v-model="activeTab" class="campus-ai" data-testid="campus-ai-tabs">
         <!-- ── 教师教学 ────────────────────────────── -->
         <t-tab-panel value="teacher" :label="$t('campusAi.tabTeacher')">
           <div class="campus-ai__tab">
