@@ -1,0 +1,184 @@
+/* ===== 赛题 Demo：院校 AI 智能辅助 ===== */
+
+/* 页面铺满内容区：与其它业务页保持一致；根元素不写 100vh */
+.container {
+  height: calc(100vh - 110px);
+  display: flex;
+  flex-direction: column;
+
+  /* 卡片主体占满剩余空间，内容超出时在卡片内部滚动 */
+  :deep(.t-card__body) {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
+
+/* ── 页头 ────────────────────────────── */
+.campus-ai__header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.campus-ai__title {
+  font-size: calc(16px * var(--app-font-scale, 1));
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.campus-ai__subtitle {
+  flex: 1 1 320px;
+  min-width: 0;
+  font-size: calc(12px * var(--app-font-scale, 1));
+  color: var(--td-text-color-secondary);
+}
+
+/* ── 页签内容 ────────────────────────────── */
+.campus-ai__tab {
+  padding-top: 10px;
+}
+
+/* 指标 / 概览卡：窄屏自动换行 */
+.campus-ai__cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.campus-ai__card {
+  flex: 1 1 200px;
+  min-width: 180px;
+}
+
+.campus-ai__card-value {
+  margin: 6px 0 4px;
+  font-size: calc(24px * var(--app-font-scale, 1));
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--td-brand-color);
+}
+
+.campus-ai__card-tip {
+  font-size: calc(12px * var(--app-font-scale, 1));
+  line-height: 1.6;
+  color: var(--td-text-color-placeholder);
+}
+
+.campus-ai__list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.campus-ai__list-item {
+  margin-bottom: 6px;
+  font-size: calc(13px * var(--app-font-scale, 1));
+  line-height: 1.7;
+  color: var(--td-text-color-secondary);
+}
+
+/* 图表容器：固定高度 + autoresize（高度也跟随全局字号缩放，避免放大字号后图表被压扁） */
+.campus-ai__chart {
+  width: 100%;
+  height: calc(300px * var(--app-font-scale, 1));
+}
+
+.campus-ai__table {
+  margin-top: 12px;
+}
+
+/* ── AI 助手答疑（模拟对话） ────────────────────────────── */
+.campus-ai__chat {
+  margin-top: 16px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: var(--td-radius-default);
+}
+
+.campus-ai__chat-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: calc(15px * var(--app-font-scale, 1));
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.campus-ai__chat-desc {
+  margin-top: 4px;
+  font-size: calc(12px * var(--app-font-scale, 1));
+  color: var(--td-text-color-placeholder);
+}
+
+.campus-ai__messages {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 220px;
+  max-height: 320px;
+  padding: 12px 0;
+  overflow-y: auto;
+}
+
+.campus-ai__message {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 78%;
+}
+
+.campus-ai__message--user {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.campus-ai__message--assistant {
+  align-self: flex-start;
+}
+
+.campus-ai__message-role {
+  font-size: calc(12px * var(--app-font-scale, 1));
+  color: var(--td-text-color-placeholder);
+}
+
+.campus-ai__bubble {
+  padding: 8px 12px;
+  border-radius: var(--td-radius-default);
+  font-size: calc(13px * var(--app-font-scale, 1));
+  line-height: 1.7;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.campus-ai__message--user .campus-ai__bubble {
+  background: var(--td-brand-color);
+  color: var(--td-text-color-anti);
+}
+
+.campus-ai__message--assistant .campus-ai__bubble {
+  background: var(--td-bg-color-secondarycontainer);
+  color: var(--td-text-color-primary);
+}
+
+.campus-ai__composer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--td-component-stroke);
+}
+
+.campus-ai__composer-input {
+  flex: 1 1 260px;
+  min-width: 200px;
+}
+
+/* ── 页脚 ────────────────────────────── */
+.campus-ai__footer {
+  font-size: calc(12px * var(--app-font-scale, 1));
+  color: var(--td-text-color-placeholder);
+}
