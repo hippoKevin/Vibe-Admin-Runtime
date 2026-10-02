@@ -33,6 +33,18 @@ interface DshLauncher {
 export interface DevAgentChangedFile {
     status: string;
     path: string;
+    /**
+     * 内容指纹（可选，新增字段，老前端忽略它也不影响）
+     *
+     * 为什么必须有：任务开始前工作区里本来就有未提交改动的文件（`M`），Agent 把它整体
+     * 重写之后 git 状态位**依然是 M** —— 只比状态位会得出「本次没改任何文件」的错误结论
+     * （实测 harness 重写了 324 行 index.vue，后端却报 0 个文件，跟随跳转不触发）。
+     * 现在指纹一起参与对比：状态位或指纹任一变化都算「本次改动」。
+     *
+     * 取值：`git hash-object` 的内容哈希（精确）；算不出来时退化成 `stat:<mtime>:<size>`
+     * （删掉/读不到的文件），再不行是 `status:<状态位>`。
+     */
+    fingerprint?: string;
 }
 
 /** 一次执行的结果 */
@@ -117,6 +129,23 @@ const FILE_POLL_INTERVAL = 2000;
 
 /** 单次 git status 的兜底超时（毫秒）：git 卡住时必须强制结束，不能累积僵尸进程 */
 const GIT_STATUS_TIMEOUT = 10000;
+
+/**
+ * 单次「内容指纹」批量计算的兜底超时（毫秒）
+ *
+ * 指纹只对 git status 已经报出来的文件算（正常就是几个），一次 `git hash-object --stdin-paths`
+ * 就够；但只要它可能卡住，就必须有兜底，否则 2s 的轮询会越堆越多。
+ */
+const GIT_HASH_TIMEOUT = 10000;
+
+/**
+ * 单次最多给多少个文件算指纹（超过就放弃指纹，退回「只比状态位」）
+ *
+ * 轮询间隔 2s。正常开发时 git status 报出来的文件是个位数，批量 hash 一次只要几十毫秒；
+ * 但如果工作区里有几百个未提交文件（大仓库、别人正在改），每 2s 把这些文件内容全部读一遍
+ * 就太贵了。超过这个上限时宁可退回旧语义（只比状态位），也不拖慢 Agent 自己的构建/写盘。
+ */
+const MAX_FINGERPRINT_FILES = 300;
 
 /**
  * 同步任务（如 AI 润色单个文档）的默认超时
@@ -258,8 +287,8 @@ export class DevAgentService {
                 sessionId: dto.sessionId,
             });
             const after = await this.collectChangedFiles(cwd);
-            const beforeStatus = new Map(before.map((item) => [item.path, item.status]));
-            const files = after.filter((item) => beforeStatus.get(item.path) !== item.status);
+            // 与后台通道同一套对比：状态位或内容指纹变了都算改动（见 changedSince）
+            const files = this.changedSince(before, after);
 
             const answer =
                 (run.answer.length > REPLY_LIMIT ? `${run.answer.slice(0, REPLY_LIMIT)}…` : run.answer) ||
@@ -444,8 +473,9 @@ export class DevAgentService {
     /**
      * 把「开始基线 → 当前状态」的差异写进 record.files
      *
-     * 与原来结束时的对比算法完全一致（状态也变了才算改动），只是现在运行期也在调用，
-     * 所以抽出来复用；filesUpdatedAt 每次刷新都会更新，前端据此判断新鲜度。
+     * 对比算法统一走 changedSince（状态位或内容指纹任一变化即算改动），
+     * 结束时的权威对比与运行期轮询完全一致；filesUpdatedAt 每次刷新都会更新，
+     * 前端据此判断新鲜度。
      *
      * @param baseline 任务开始时的 git status
      * @param after    当前 git status（不传 = 空，用于「基线即当前」的初始化）
@@ -456,10 +486,8 @@ export class DevAgentService {
         after?: DevAgentChangedFile[],
     ) {
         const current = after ?? [];
-        const baseStatus = new Map(baseline.map((item) => [item.path, item.status]));
-        const files = current.filter((item) => baseStatus.get(item.path) !== item.status);
 
-        record.files = files;
+        record.files = this.changedSince(baseline, current);
         record.filesUpdatedAt = new Date().toISOString();
     }
 
@@ -606,7 +634,6 @@ export class DevAgentService {
             const before = await this.collectChangedFiles(cwd);
             const run = await this.runAgent(launcher, cwd, prompt, timeoutMs, options);
             const after = await this.collectChangedFiles(cwd);
-            const beforeStatus = new Map(before.map((item) => [item.path, item.status]));
 
             const result: DevAgentRunResult = {
                 ok: run.exitCode === 0,
@@ -614,7 +641,8 @@ export class DevAgentService {
                 duration: Date.now() - startedAt,
                 output: run.answer,
                 reasoningTail: this.tail(run.stderr, STDERR_LIMIT),
-                files: after.filter((item) => beforeStatus.get(item.path) !== item.status),
+                // 与后台通道一致：状态位或内容指纹任一变化都算改动
+                files: this.changedSince(before, after),
                 sessionId: run.sessionId,
                 finishedAt: new Date().toISOString(),
                 error: run.timedOut ? '执行超时，已被强制结束' : run.errorText || undefined,
@@ -795,10 +823,38 @@ export class DevAgentService {
         }
     }
 
-    /** 用 git status 列出这次任务改了哪些文件 */
-    private collectChangedFiles(cwd: string): Promise<DevAgentChangedFile[]> {
+    /**
+     * 用 git status 列出这次任务改了哪些文件（含内容指纹）
+     *
+     * 两条关键参数：
+     *   - `-uall`（= --untracked-files=all）：**未跟踪目录按文件逐个列出**。
+     *     默认的 `-u normal` 对新建的整个页面目录只报一行 `?? ADMINCLIENT/src/pages/Xxx/`
+     *     （带斜杠、没有文件名），前端拿不到「具体是哪个页面文件」，新建页面时不跟随跳转；
+     *     加了 `-uall` 才会分别报出目录里的 index.vue / index.scss 等具体文件。
+     *   - `-z`：用 NUL 分隔、且**不做引号转义**（绕开 core.quotepath），
+     *     路径里有空格、中文、引号都不会被截断或转义错位。
+     *
+     * 解析出来的每一项再补一个内容指纹（见 DevAgentChangedFile.fingerprint），
+     * 让「状态位没变但内容被整体重写」也能被察觉。
+     */
+    private async collectChangedFiles(cwd: string): Promise<DevAgentChangedFile[]> {
+        const files = await this.readGitStatus(cwd);
+        return this.attachFingerprints(cwd, files);
+    }
+
+    /**
+     * 跑一次 `git status --porcelain -z -uall` 并解析
+     *
+     * -z 的输出形态（NUL 分隔，不带换行）：
+     *   `XY <path>\0`，重命名/复制是 `XY <新路径>\0<原路径>\0`
+     *   —— 原路径那一段**没有状态头**，必须整段跳过，否则会被当成一个畸形的改动文件。
+     */
+    private readGitStatus(cwd: string): Promise<DevAgentChangedFile[]> {
         return new Promise((resolve) => {
-            const child = spawn('git', ['status', '--porcelain'], { cwd, windowsHide: true });
+            const child = spawn('git', ['status', '--porcelain', '-z', '-uall'], {
+                cwd,
+                windowsHide: true,
+            });
 
             let output = '';
             let settled = false;
@@ -811,16 +867,7 @@ export class DevAgentService {
                     clearTimeout(timer);
                     timer = null;
                 }
-
-                const files = output
-                    .split(/\r?\n/)
-                    .filter((line) => line.trim())
-                    .map((line) => ({
-                        status: line.slice(0, 2).trim(),
-                        path: line.slice(3).trim(),
-                    }))
-                    .filter((item) => item.path);
-                resolve(files);
+                resolve(this.parseStatusOutput(output));
             };
 
             // 运行期每 2s 扫一次，git 若卡住必须兜底结束，否则轮询会越堆越多
@@ -836,6 +883,165 @@ export class DevAgentService {
             });
             child.on('error', () => finish());
             child.on('exit', () => finish());
+        });
+    }
+
+    /** 解析 `git status --porcelain -z` 的输出（NUL 分隔，重命名占两段） */
+    private parseStatusOutput(output: string): DevAgentChangedFile[] {
+        const files: DevAgentChangedFile[] = [];
+        const tokens = String(output || '').split('\0');
+
+        for (let index = 0; index < tokens.length; index += 1) {
+            const token = tokens[index];
+            if (!token) continue;
+
+            const status = token.slice(0, 2).trim();
+            const filePath = token.slice(3).trim();
+            if (!status || !filePath) continue;
+
+            files.push({ status, path: filePath });
+
+            // 重命名（R）/ 复制（C）：紧跟的一段是「原路径」，没有状态头，跳过它
+            if (/^[RC]/.test(status)) index += 1;
+        }
+
+        return files;
+    }
+
+    /**
+     * 给 git status 报出来的每个文件算内容指纹
+     *
+     * 实现取舍：
+     *   - 用 `git hash-object --stdin-paths` **一次进程算完所有文件**（不是每个文件起一个 git），
+     *     且不带 `-w`（不写对象库，纯粹算哈希，不会污染仓库）；
+     *   - 只算 git status 已报告的文件（正常只有几个），不会对全仓几百个文件做哈希；
+     *     文件数超过 MAX_FINGERPRINT_FILES 时直接放弃指纹（退回旧语义），保住 2s 轮询的开销；
+     *   - 算不出来的（删除、目录、权限问题）退化成 `stat:<mtime>:<size>`，
+     *     再不行用状态位兜底 —— 有值就行，关键是同一路径两次采样可比较。
+     */
+    private async attachFingerprints(
+        cwd: string,
+        files: DevAgentChangedFile[],
+    ): Promise<DevAgentChangedFile[]> {
+        if (!files.length) return files;
+
+        if (files.length > MAX_FINGERPRINT_FILES) {
+            this.logger.warn(
+                `本次 git status 报告了 ${files.length} 个文件（上限 ${MAX_FINGERPRINT_FILES}），跳过内容指纹，只比状态位`,
+            );
+            return files;
+        }
+
+        // 不存在的文件（已删除）不必也不能算哈希，直接用 stat 兜底
+        const existing = files.filter((item) => {
+            try {
+                return fs.statSync(path.resolve(cwd, item.path)).isFile();
+            } catch {
+                return false;
+            }
+        });
+
+        const hashes = existing.length
+            ? await this.hashObjects(
+                  cwd,
+                  existing.map((item) => item.path),
+              )
+            : new Map<string, string>();
+
+        return files.map((item) => ({
+            ...item,
+            fingerprint: hashes.get(item.path) ?? this.statFingerprint(cwd, item.path, item.status),
+        }));
+    }
+
+    /** 一次进程算出多个文件的内容哈希（key = git status 给的仓库相对路径） */
+    private hashObjects(cwd: string, paths: string[]): Promise<Map<string, string>> {
+        return new Promise((resolve) => {
+            const result = new Map<string, string>();
+            if (!paths.length) {
+                resolve(result);
+                return;
+            }
+
+            const child = spawn('git', ['hash-object', '--stdin-paths'], {
+                cwd,
+                windowsHide: true,
+            });
+
+            let output = '';
+            let settled = false;
+            let timer: NodeJS.Timeout | null = null;
+
+            const finish = () => {
+                if (settled) return;
+                settled = true;
+                if (timer) {
+                    clearTimeout(timer);
+                    timer = null;
+                }
+
+                // 输出按输入顺序一行一个哈希；行数与文件数对不上时只认对得上的前缀
+                const lines = output.split(/\r?\n/).filter((line) => line.trim());
+                lines.forEach((line, index) => {
+                    const name = paths[index];
+                    const hash = line.trim();
+                    if (name && /^[0-9a-f]{7,}$/i.test(hash)) result.set(name, hash);
+                });
+                resolve(result);
+            };
+
+            timer = setTimeout(() => {
+                this.logger.warn(`git hash-object 超时（${GIT_HASH_TIMEOUT}ms），已强制结束`);
+                this.killTree(child.pid);
+                finish();
+            }, GIT_HASH_TIMEOUT);
+            timer.unref?.();
+
+            child.stdout?.on('data', (data) => {
+                output += String(data);
+            });
+            child.on('error', () => finish());
+            child.on('exit', () => finish());
+
+            // 路径按行喂给 git（git status 给的是 / 分隔的仓库相对路径，Windows 下同样可用）
+            child.stdin?.on('error', () => {
+                /* 进程可能已退出，忽略写入失败，等 exit 兜底 */
+            });
+            child.stdin?.end(paths.join('\n') + '\n');
+        });
+    }
+
+    /** 内容哈希算不出来时的兜底指纹：`stat:<mtimeMs>:<size>`，读不到就用状态位 */
+    private statFingerprint(cwd: string, filePath: string, status: string): string {
+        try {
+            const stat = fs.statSync(path.resolve(cwd, filePath));
+            return `stat:${Math.round(stat.mtimeMs)}:${stat.size}`;
+        } catch {
+            return `status:${status}`;
+        }
+    }
+
+    /**
+     * 「开始基线 → 当前」的差异：**状态位或内容指纹任一变化**都算本次改动
+     *
+     * 这就是场景 B 的修复点：任务开始前就已经是 M 的文件，被 Agent 整体重写后状态位仍是 M，
+     * 只比状态位会漏掉它（实测 324 行的改动被当成「没变化」）；比指纹就能抓到。
+     * 指纹缺失（老调用方 / 超限退化）时退回原来的状态位比较，不改变既有语义。
+     */
+    private changedSince(
+        baseline: DevAgentChangedFile[],
+        current: DevAgentChangedFile[],
+    ): DevAgentChangedFile[] {
+        const before = new Map(baseline.map((item) => [item.path, item]));
+        return current.filter((item) => {
+            const prev = before.get(item.path);
+            // 基线里没有 → 本次新出现的改动
+            if (!prev) return true;
+            // 状态位变了（M→A、??→M、新增/删除……）
+            if (prev.status !== item.status) return true;
+            // 状态位没变：看内容指纹
+            if (prev.fingerprint && item.fingerprint) return prev.fingerprint !== item.fingerprint;
+            return false;
         });
     }
 

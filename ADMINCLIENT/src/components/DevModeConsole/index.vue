@@ -494,6 +494,8 @@ import { SphereMesh, drawWave, readLevel } from './controller/mesh'
 import { SpeechController } from './controller/speech'
 import type { SpeechEngine } from './controller/speech'
 import { VoiceInput } from './controller/voice'
+// 刷新「菜单 → 页面」表之后，需要把新页面补注册成路由（与启动时用的是同一个函数，幂等）
+import addMenuRoutes from '@/router/addMenuRoutes'
 
 /**
  * 开发模式控制台（原生 Vue 组件）
@@ -1430,12 +1432,80 @@ function markFileNavigated(runId: string | number, path: string) {
  *   - 只有新出现的文件才处理（同一个文件在一次运行里只跳一次，避免轮询抖动）；
  *   - 同一页面重复改动不重复跳；
  *   - 未登录 / 落在 /login 时由 jumpToChangedPage 直接收起开发模式，不跳（防死循环）。
+ *
+ * 另外：如果这次改动**一个已知页面都对不上**，而改动里确实有 .vue 页面文件，
+ * 那很可能是 Agent 刚在同一个任务里新建了页面 / 登记了菜单 —— 前端的
+ * 「菜单 → 页面」表还是任务开始前的那份，此时先刷新一次页面表再重试（见 refreshPageTable）。
  */
-function followChangedPages(record: DevAgentRunRecord) {
+async function followChangedPages(record: DevAgentRunRecord) {
   if (!followJump.value) return
   const files = Array.isArray(record?.files) ? record.files : []
   if (!files.length) return
+
+  if (!resolvePageRoute(files) && files.some((file) => isNewPageFile(String(file?.path || '')))) {
+    // 刷新失败（网络/未登录/没有新菜单）就保持现状：跳转宁可不发生，也不能乱跳
+    await refreshPageTable(record.id)
+  }
+
   jumpToChangedPage(files, record.id, true)
+}
+
+/** 改动文件是不是「可能对应一个新页面」的 .vue（Agent 自己目录下的改动不算） */
+function isNewPageFile(filePath: string): boolean {
+  const normalized = normalizePath(filePath)
+  return normalized.endsWith('.vue') && !normalized.startsWith(AGENT_DIR_PREFIX)
+}
+
+/**
+ * 页面表刷新节流
+ *
+ * - 同一条运行**成功**刷过一次之后就不再刷（菜单不会在一次任务里反复变）；
+ * - 失败时允许重试，但两次尝试之间至少隔 5s（轮询 2.5s 一次，别把接口打爆）。
+ */
+const PAGE_TABLE_REFRESH_INTERVAL = 5000
+let pageTableRefreshedRunId = ''
+let lastPageTableRefreshAt = 0
+
+/**
+ * 刷新「菜单 → 页面」表，并把新页面补注册成路由
+ *
+ * 为什么需要：菜单是数据库数据，前端第一次进应用时才拉一次（见 router 守卫的
+ * dynamicRoutesAdded）。如果 Agent 在同一个任务里既新建了页面文件、又登记了菜单，
+ * 前端手里那张表就是旧的 —— 表现是「文件确实新建了，界面却不动」，而且任务结束
+ * 时也不会跳（结束时用的是同一张表）。
+ *
+ * 安全性：
+ *   - 只在「改动里有 .vue 且当前一个页面都匹配不上」时才调用；
+ *   - 同一条运行成功刷过一次就不再刷，失败最多 5s 重试一次，失败就静默保持旧表；
+ *   - addMenuRoutes 自身按 component_name 去重（幂等），只补注册缺的那些路由。
+ *
+ * @returns 是否真的刷新到了新表（拿到菜单数组才算成功）
+ */
+async function refreshPageTable(runId?: string | number | null): Promise<boolean> {
+  const key = String(runId ?? '')
+  const now = Date.now()
+  if (key && key === pageTableRefreshedRunId) return false
+  if (now - lastPageTableRefreshAt < PAGE_TABLE_REFRESH_INTERVAL) return false
+  lastPageTableRefreshAt = now
+
+  try {
+    // 同一个接口也是启动时用的那个：会顺带把 userInfo（含 menu_list）写回 store 与 localStorage
+    const res: any = await userStore.getUserInfoForToken()
+    const menus = res?.data?.menu_list
+    if (!Array.isArray(menus) || !menus.length) return false
+
+    try {
+      addMenuRoutes(menus, router)
+    } catch (error) {
+      // 新页面刚写出来时 Vite 可能还没收录它（import.meta.glob 未热更新），先不注册；
+      // 之后的重试（至少隔 5s）还会再来一次，注册不上也不会跳错页面。
+      console.warn('[DevMode] 补注册页面路由失败：', error)
+    }
+    if (key) pageTableRefreshedRunId = key
+    return true
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -1482,12 +1552,21 @@ function jumpToChangedPage(
     return null
   }
 
+  // 路由还没注册时先不跳、也不记账：新建页面的路由是补注册上去的，注册好之前 push
+  // 会落到兜底路由 /NotFound（比不跳更糟）。下一次轮询会重新判定。
+  if (!router.hasRoute(target.name)) return null
+
   // 先记账再跳：即使这次跳转被守卫拦下，也不会再重复跳（防死循环）
   if (hasRunId) {
     const key = runId as string | number
+    // 只记「这次真正跳过去的那个页面」所属的文件：同一批改动里若还牵涉别的页面，
+    // 那些文件要留到下一次轮询再跳（否则会在同一批里被一次性记账掉，永远跳不到）。
+    // 同一个文件 / 同一个页面在一次运行里依然只会跳一次。
     pending.forEach((file) => {
       const path = String(file?.path || '')
-      if (path) markFileNavigated(key, path)
+      if (!path) return
+      const page = resolvePageRoute([file])
+      if (page && page.name === target.name) markFileNavigated(key, path)
     })
     // 同一页面（不同文件落在同一路由）也只跳一次
     markFileNavigated(key, `page:${target.name}`)
@@ -1601,7 +1680,7 @@ function pollUntilRunDone(runId: string | number | null, adopted = false) {
         const pending = isRecordRunning(current) || (adopted && !!data?.running)
         if (pending) {
           // 运行中：只要后端报出「已经改到哪些文件」，就实时跳到对应页面
-          if (current && recordChannel(current) !== 'reply') followChangedPages(current)
+          if (current && recordChannel(current) !== 'reply') void followChangedPages(current)
           if (Date.now() - waitingSince >= pollMaxWait) {
             // 本次提交超过上限：停止轮询并提示去面板看，避免无限转圈
             stopBusy()

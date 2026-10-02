@@ -11,6 +11,14 @@ import requestApi from '@/utils/request/request'
 export interface DevAgentChangedFile {
   status: string
   path: string
+  /**
+   * 内容指纹（后端新增字段，可选；老后端不返回时忽略即可）
+   *
+   * 后端用它识别「状态位没变但内容被整体重写」的文件：任务开始前就已经是 M 的文件，
+   * Agent 重写之后状态位仍是 M，只比状态位会漏掉它（跟随跳转不触发）。
+   * 前端目前不需要参与计算，只把它当成同一路径的一次「新改动」即可。
+   */
+  fingerprint?: string
 }
 
 /** 通道：reply = 简短回复（TTS 播报）/ code = 后台执行代码 */
