@@ -42,6 +42,14 @@ export const DEV_MODE_PROFILE_KEY = 'dev-mode-profile'
 /** 当前会话 id（DSH sessionId）：带上它就是接着这条会话继续追问 */
 export const DEV_MODE_SESSION_KEY = 'dev-mode-session-id'
 
+/**
+ * 是否「自动跟随 Agent 跳转」
+ *
+ * 开（默认）：Agent 运行期间每改到一个前端文件，界面就跳到那个文件对应的页面；
+ * 关：退回旧行为 —— 只在任务结束后按最终改动列表跳一次。
+ */
+export const DEV_MODE_FOLLOW_KEY = 'dev-mode-follow-jump'
+
 /** 面板透明度默认值（%） */
 export const PANEL_ALPHA_DEFAULT = 86
 
@@ -162,6 +170,9 @@ export const devModeProfile = ref<string>(readString(DEV_MODE_PROFILE_KEY, DEV_M
 /** 当前会话 id（空字符串 = 新对话，下次提交不带 sessionId） */
 export const devModeSessionId = ref<string>(readString(DEV_MODE_SESSION_KEY, ''))
 
+/** 是否自动跟随 Agent 跳转（默认开：运行中改到哪个前端文件就跳到哪个页面） */
+export const devModeFollowJump = ref<boolean>(readBoolean(DEV_MODE_FOLLOW_KEY, true))
+
 /** 打开开发模式（未登录时不开；持久化，刷新后自动恢复） */
 export function openDevMode() {
   if (!isDevModeAllowed()) return false
@@ -259,4 +270,10 @@ export function saveDevModeSessionId(value: string) {
   const next = String(value || '').trim()
   devModeSessionId.value = next
   writeString(DEV_MODE_SESSION_KEY, next)
+}
+
+/** 保存是否自动跟随 Agent 跳转 */
+export function saveDevModeFollowJump(value: boolean) {
+  devModeFollowJump.value = value
+  writeBoolean(DEV_MODE_FOLLOW_KEY, value)
 }

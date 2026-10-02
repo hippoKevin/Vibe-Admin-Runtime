@@ -78,6 +78,13 @@ export interface DevAgentRunRecord extends DevAgentRunResult {
     sessionId?: string | null;
     /** 运行轨迹（DSH --json 事件流，已限量截断） */
     events?: DshRunEvent[];
+    /**
+     * files 最近一次被刷新（增量对比到改动文件）的时间
+     *
+     * 运行中由轮询持续更新，前端据此判断这份列表有多新鲜（也便于排查
+     * 「改了文件但界面没反应」到底是后端没扫到还是前端没轮询）。
+     */
+    filesUpdatedAt?: string;
 }
 
 /** 最多保留多少条执行历史（内存态，重启即清空） */
@@ -97,6 +104,19 @@ const REPLY_LIMIT = 600;
 
 /** 简短回复通道的默认超时（比改代码短得多） */
 const REPLY_TIMEOUT = 90 * 1000;
+
+/**
+ * 后台任务运行期间「已经改到哪些文件」的刷新间隔（毫秒）
+ *
+ * 需求：开发模式跑 code 通道时，Agent 每改到一个前端文件，界面就该跳到对应页面，
+ * 而不是等整个任务结束才跳一次。为此后端要在运行中持续把改动文件暴露给 /runs。
+ * 代价是每个间隔跑一次 `git status --porcelain`，在大仓库上并不便宜，
+ * 所以间隔不能再往下压（低于 1.5s 会明显拖慢 Agent 自己的构建/写盘）。
+ */
+const FILE_POLL_INTERVAL = 2000;
+
+/** 单次 git status 的兜底超时（毫秒）：git 卡住时必须强制结束，不能累积僵尸进程 */
+const GIT_STATUS_TIMEOUT = 10000;
 
 /**
  * 同步任务（如 AI 润色单个文档）的默认超时
@@ -345,13 +365,20 @@ export class DevAgentService {
         startedAt: number,
         options: { profile?: string; sessionId?: string } = {},
     ) {
+        // 运行期的改动文件轮询：任务开始就起，结束时（finally）一定清掉
+        let fileTimer: NodeJS.Timeout | null = null;
+
         try {
             const before = await this.collectChangedFiles(cwd);
+            // 基线本身写一次（此刻「本次改动」为空），让前端立刻拿到 filesUpdatedAt
+            this.syncChangedFiles(record, before, before);
+            fileTimer = this.startFilePolling(cwd, before, record);
+
             const run = await this.runAgent(launcher, cwd, prompt, this.resolveTimeout(), options);
             const after = await this.collectChangedFiles(cwd);
-            const beforeStatus = new Map(before.map((item) => [item.path, item.status]));
 
-            record.files = after.filter((item) => beforeStatus.get(item.path) !== item.status);
+            // 最终对比是权威完整列表（增量轮询可能比它早一个间隔）
+            this.syncChangedFiles(record, before, after);
             record.exitCode = run.exitCode;
             record.ok = run.exitCode === 0;
             record.duration = Date.now() - startedAt;
@@ -374,8 +401,66 @@ export class DevAgentService {
             record.error = error?.message || String(error);
             this.logger.error(`开发模式-后台任务失败：id=${record.id} ${record.error}`);
         } finally {
+            this.stopFilePolling(fileTimer);
             this.running = false;
         }
+    }
+
+    /**
+     * 起一个轻量轮询，把「当前改动文件集合」增量写进 record.files
+     *
+     * 为什么不用 chokidar 之类的文件监听：这里要的是「改了哪些文件」这个
+     * 与菜单页面对应的结论，而 git status 就是唯一权威来源（新增/删除/重命名
+     * 都能一眼看出来）。间隔 2s（见 FILE_POLL_INTERVAL），开销可接受。
+     *
+     * @param baseline  任务开始时的 git status 结果，用作「哪些是这次改的」的基准
+     * @param record    正在跑的那条历史记录（前端轮询读的就是它）
+     */
+    private startFilePolling(
+        cwd: string,
+        baseline: DevAgentChangedFile[],
+        record: DevAgentRunRecord,
+    ): NodeJS.Timeout {
+        const timer = setInterval(() => {
+            void this.collectChangedFiles(cwd).then((current) => {
+                // 任务已经收了（或记录已被替换）就别再动它
+                if (record.running === false) return;
+                this.syncChangedFiles(record, baseline, current);
+            });
+        }, FILE_POLL_INTERVAL);
+
+        // 计时器不参与事件循环的存活判定：即使异常路径漏了清理，进程也能正常退出
+        timer.unref?.();
+
+        return timer;
+    }
+
+    /** 停止运行期的改动文件轮询 */
+    private stopFilePolling(timer: NodeJS.Timeout | null) {
+        if (!timer) return;
+        clearInterval(timer);
+    }
+
+    /**
+     * 把「开始基线 → 当前状态」的差异写进 record.files
+     *
+     * 与原来结束时的对比算法完全一致（状态也变了才算改动），只是现在运行期也在调用，
+     * 所以抽出来复用；filesUpdatedAt 每次刷新都会更新，前端据此判断新鲜度。
+     *
+     * @param baseline 任务开始时的 git status
+     * @param after    当前 git status（不传 = 空，用于「基线即当前」的初始化）
+     */
+    private syncChangedFiles(
+        record: DevAgentRunRecord,
+        baseline: DevAgentChangedFile[],
+        after?: DevAgentChangedFile[],
+    ) {
+        const current = after ?? [];
+        const baseStatus = new Map(baseline.map((item) => [item.path, item.status]));
+        const files = current.filter((item) => baseStatus.get(item.path) !== item.status);
+
+        record.files = files;
+        record.filesUpdatedAt = new Date().toISOString();
     }
 
     /** 取启动器，取不到就抛业务异常 */
@@ -716,11 +801,17 @@ export class DevAgentService {
             const child = spawn('git', ['status', '--porcelain'], { cwd, windowsHide: true });
 
             let output = '';
-            child.stdout?.on('data', (data) => {
-                output += String(data);
-            });
-            child.on('error', () => resolve([]));
-            child.on('exit', () => {
+            let settled = false;
+            let timer: NodeJS.Timeout | null = null;
+
+            const finish = () => {
+                if (settled) return;
+                settled = true;
+                if (timer) {
+                    clearTimeout(timer);
+                    timer = null;
+                }
+
                 const files = output
                     .split(/\r?\n/)
                     .filter((line) => line.trim())
@@ -730,7 +821,21 @@ export class DevAgentService {
                     }))
                     .filter((item) => item.path);
                 resolve(files);
+            };
+
+            // 运行期每 2s 扫一次，git 若卡住必须兜底结束，否则轮询会越堆越多
+            timer = setTimeout(() => {
+                this.logger.warn(`git status 超时（${GIT_STATUS_TIMEOUT}ms），已强制结束`);
+                this.killTree(child.pid);
+                finish();
+            }, GIT_STATUS_TIMEOUT);
+            timer.unref?.();
+
+            child.stdout?.on('data', (data) => {
+                output += String(data);
             });
+            child.on('error', () => finish());
+            child.on('exit', () => finish());
         });
     }
 

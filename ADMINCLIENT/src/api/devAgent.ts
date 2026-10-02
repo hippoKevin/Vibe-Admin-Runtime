@@ -67,6 +67,13 @@ export interface DevAgentRunRecord extends DevAgentRunResult {
   sessionId?: string | null
   /** 运行轨迹（DSH --json 事件流） */
   events?: DshRunEvent[]
+  /**
+   * files 最近一次刷新的时间
+   *
+   * 后端在任务运行期间每 2s 用 git status 增量对比一次改动文件，
+   * 前端据此判断「运行中的这份文件列表」有多新鲜。
+   */
+  filesUpdatedAt?: string
 }
 
 /** reply 通道（同步返回）的结果 */

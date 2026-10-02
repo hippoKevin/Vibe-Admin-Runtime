@@ -364,8 +364,51 @@
   }
 }
 
-/* ===== 底部交互区（球的正下方，也就是原来音轨的位置） ===== */
-.dev-mode__dock {
+/* 「自动跟随跳转」开关：小圆点 + 一行小字，开启时点亮品牌色。
+   与 TTS 状态行同排，只出现在「后台执行」通道（那里才有文件改动）。 */
+.dev-mode__follow {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: calc(5px * var(--app-font-scale, 1));
+  height: calc(22px * var(--app-font-scale, 1));
+  padding: 0 calc(9px * var(--app-font-scale, 1));
+  border: 1px solid var(--td-component-stroke, rgba(27, 36, 49, 0.12));
+  border-radius: calc(11px * var(--app-font-scale, 1));
+  background: var(--td-bg-color-container, rgba(255, 255, 255, 0.86));
+  color: var(--td-text-color-secondary, #5a6880);
+  font-family: inherit;
+  font-size: calc(10px * var(--app-font-scale, 1));
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: border-color 180ms ease, color 180ms ease;
+}
+
+.dev-mode__follow:hover {
+  border-color: var(--td-brand-color, #3b5bff);
+  color: var(--td-brand-color, #3b5bff);
+}
+
+.dev-mode__follow-dot {
+  flex: 0 0 auto;
+  width: calc(6px * var(--app-font-scale, 1));
+  height: calc(6px * var(--app-font-scale, 1));
+  border-radius: 50%;
+  background: var(--td-component-stroke, rgba(27, 36, 49, 0.24));
+  transition: background 180ms ease;
+}
+
+.dev-mode__follow--on {
+  border-color: rgba(59, 91, 255, 0.42);
+  color: var(--td-brand-color, #3b5bff);
+}
+
+.dev-mode__follow--on .dev-mode__follow-dot {
+  background: var(--td-brand-color, #3b5bff);
+}
+
+/* ===== 底部交互区（球的正下方，也就是原来音轨的位置） ===== */.dev-mode__dock {
   position: relative;
   display: flex;
   flex: 0 0 auto;

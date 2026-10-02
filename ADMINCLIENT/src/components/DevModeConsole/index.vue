@@ -95,6 +95,20 @@
             data-testid="dev-console-tts-status"
             :data-tts-ready="ttsStatus ? String(ttsStatus.ready) : ''"
           >{{ ttsLabel }}</span>
+          <!-- 自动跟随跳转开关（持久化）：关掉后回到「只在任务结束时跳一次」 -->
+          <button
+            v-if="channel === 'code'"
+            type="button"
+            class="dev-mode__follow"
+            :class="{ 'dev-mode__follow--on': followJump }"
+            data-testid="dev-console-follow-toggle"
+            :aria-pressed="followJump ? 'true' : 'false'"
+            :title="$t('devMode.followJumpTip')"
+            @click="handleToggleFollowJump"
+          >
+            <span class="dev-mode__follow-dot" />
+            <span>{{ $t('devMode.followJumpLabel') }}</span>
+          </button>
         </div>
 
         <!-- 本次执行结果 -->
@@ -457,6 +471,7 @@ import {
   devModeChannel,
   devModeDockOffset,
   devModeDraft,
+  devModeFollowJump,
   devModePanelAlpha,
   devModePanelOpen,
   devModeProfile,
@@ -467,6 +482,7 @@ import {
   saveDevModeChannel,
   saveDevModeDockOffset,
   saveDevModeDraft,
+  saveDevModeFollowJump,
   saveDevModePanelAlpha,
   saveDevModePanelOpen,
   saveDevModeProfile,
@@ -597,6 +613,8 @@ interface MenuPage {
   name: string
   /** 菜单配置的组件地址，形如 /src/pages/SystemOps/Log/index.vue */
   address: string
+  /** 菜单显示名（提示文案用「系统日志」这种用户看得懂的名字，而不是路由名） */
+  label: string
 }
 
 const { t, locale } = useI18n()
@@ -647,6 +665,8 @@ const resultVisible = ref(false)
 const channel = ref<DevModeChannel>(devModeChannel.value)
 /** 是否语音播报（持久化） */
 const speechMuted = ref<boolean>(!devModeSpeak.value)
+/** 是否自动跟随 Agent 跳转（持久化；关掉 = 只在任务结束时跳一次） */
+const followJump = ref<boolean>(devModeFollowJump.value)
 /** 结果卡里展示的答复：快速回复通道的回答本来就不落历史，单独存一份 */
 const resultAnswer = ref('')
 /** 产生当前结果的通道（决定结果卡是「答复卡」还是「改动卡」） */
@@ -1233,6 +1253,7 @@ function collectMenuPages(): MenuPage[] {
         pages.push({
           name: String(item.component_name),
           address: String(item.component_address),
+          label: String(item.menu_name || item.component_name),
         })
       }
       if (Array.isArray(item?.children) && item.children.length) walk(item.children)
@@ -1244,73 +1265,239 @@ function collectMenuPages(): MenuPage[] {
   return pages
 }
 
-/** 从改动文件里挑出要跳转的页面：命中多个时取第一个非 ADMINAGENT/ 的前端页面 */
-function resolvePageRoute(files: DevAgentChangedFile[]): MenuPage | null {
-  const pages = collectMenuPages()
-  const hits: { page: MenuPage; path: string }[] = []
+/** 去掉文件名的同时去掉开头的 '/'（菜单地址以 / 开头，改动文件路径是仓库相对路径） */
+function trimDir(dir: string): string {
+  return dir.replace(/^\/+/, '')
+}
 
-  for (const file of files) {
-    const filePath = String(file?.path || '')
-    if (!filePath) continue
-
-    const hit = pages.find((page) => isSamePageFile(page.address, filePath))
-    if (hit) hits.push({ page: hit, path: filePath })
-  }
-
-  const frontend = hits.find((item) => !normalizePath(item.path).startsWith(AGENT_DIR_PREFIX))
-  return frontend ? frontend.page : null
+/** 去掉文件名，只留所在目录（归一化后的形式） */
+function dirOf(normalized: string): string {
+  const index = normalized.lastIndexOf('/')
+  return index < 0 ? '' : normalized.slice(0, index)
 }
 
 /**
- * 每条完成记录只自动跳转一次
+ * 改动文件 ↔ 菜单页面 的第二层匹配：**同一个页面目录**
  *
- * 否则会出现死循环：跳转 -> 路由守卫发现未登录 -> 弹回登录页 -> 组件重新挂载
- * -> 又读到同一条完成记录 -> 再跳转……页面就会一直刷新。
+ * 为什么必须有这一层：菜单里登记的组件地址是页面的入口 .vue（index.vue），
+ * 而 Agent 实际改到的往往是同一个页面目录下的 index.scss / types.ts /
+ * components/xxx.vue —— 只按「整段文件名后缀」比对这些文件永远匹配不上，
+ * 表现就是「改了页面却从不跳转」。这里退一步按目录归属判断：
+ *   改动文件在页面目录之下（或反过来、或末尾整段目录对得上）→ 认为是这个页面的改动。
+ *
+ * 注意三点：
+ *   1) 菜单地址以 '/' 开头（`/src/pages/...`），改动文件是仓库相对路径
+ *      （`ADMINCLIENT/src/pages/...`），两边都可能带前导 '/'，比之前统一去掉；
+ *   2) 目录之间是「整段后缀」关系（仓库根目录名不同：菜单不带 ADMINCLIENT/），
+ *      所以用边界安全的 suffix 判断，`.../AgentAdmin/Tool` 命中的是 `.../Tool/x.scss`；
+ *   3) 必须比到目录边界，`.../tool-x/a.scss` 不能被当成 `.../tool` 的子文件。
+ */
+function isSamePageDir(address: string, filePath: string): boolean {
+  const pageDir = trimDir(dirOf(normalizePath(address)))
+  const fileDir = trimDir(dirOf(normalizePath(filePath)))
+  if (!pageDir || !fileDir) return false
+  if (pageDir === fileDir) return true
+  return isDirSuffix(fileDir, pageDir) || isDirSuffix(pageDir, fileDir) || dirContains(fileDir, pageDir)
+}
+
+/** child 是否包含 parent 这个**整段目录**（允许 child 前面多出仓库目录名前缀） */
+function isDirSuffix(child: string, parent: string): boolean {
+  if (!parent || child.length <= parent.length || !child.endsWith(parent)) return false
+  return child.charAt(child.length - parent.length - 1) === '/'
+}
+
+/**
+ * pageDir 是否作为一整段路径出现在 fileDir 里
+ *
+ * 用于「页面目录 + 更深的子目录」：`pages/AgentAdmin/Tool` 要能命中
+ * `adminclient/pages/AgentAdmin/Tool/components/A.vue`（菜单地址不带仓库目录名
+ * ADMINCLIENT/，所以只能用「整段包含」而不是前缀比较）。
+ */
+function dirContains(fileDir: string, pageDir: string): boolean {
+  const index = fileDir.indexOf(pageDir)
+  if (index < 0) return false
+  if (index > 0 && fileDir.charAt(index - 1) !== '/') return false
+  const after = index + pageDir.length
+  return after === fileDir.length || fileDir.charAt(after) === '/'
+}
+
+/** 从改动文件里挑出要跳转的页面：命中多个时取第一个非 ADMINAGENT/ 的前端页面 */
+function resolvePageRoute(files: DevAgentChangedFile[]): MenuPage | null {
+  const pages = collectMenuPages()
+  if (!pages.length) return null
+
+  // 两次扫描：先按文件精确命中，再退到「同一页面目录」
+  for (const match of [isSamePageFile, isSamePageDir]) {
+    const hits: { page: MenuPage; path: string }[] = []
+
+    for (const file of files) {
+      const filePath = String(file?.path || '')
+      if (!filePath) continue
+
+      const hit = pages.find((page) => match(page.address, filePath))
+      if (hit) hits.push({ page: hit, path: filePath })
+    }
+
+    const frontend = hits.find((item) => !normalizePath(item.path).startsWith(AGENT_DIR_PREFIX))
+    if (frontend) return frontend.page
+  }
+
+  return null
+}
+
+/**
+ * 跳转记账：**每条运行 + 每个文件路径** 最多自动跳一次
+ *
+ * 语义演进（务必理解清楚，这里踩过坑）：
+ * - 一开始是「每条运行只跳一次」，否则会出现死循环：跳转 → 路由守卫发现未登录 →
+ *   弹回登录页 → 组件重新挂载 → 又读到同一条记录 → 再跳转……页面一直刷新；
+ * - 现在需求变成「运行中每改到一个前端文件就跳到对应页面」，所以记账粒度必须细化到
+ *   文件：同一个文件在一次运行里只跳一次（避免轮询同一份列表反复 push 造成抖动），
+ *   不同文件则允许先后各跳一次。
+ *
+ * 存的是一个对象：{ [runId]: string[] }，值是这条运行里**已经跳过的文件路径**。
+ * 保留 runId 这一层是为了不丢原来的防死循环语义 —— 未登录 / 已落到 /login 时
+ * 依然直接 closeDevMode() 不再跳（见 jumpToChangedPage）。
  */
 const NAVIGATED_RUN_KEY = 'dev-mode-navigated-run'
+/** 记账里最多保留多少条运行（避免 localStorage 无限增长） */
+const NAVIGATED_RUN_LIMIT = 20
 
-function markRunNavigated(runId: string | number) {
+/** 读取记账表；老版本存的是单个 runId 字符串，这里兼容地当成「这条运行已跳过一次」 */
+function readNavigatedRuns(): Record<string, string[]> {
   try {
-    localStorage.setItem(NAVIGATED_RUN_KEY, String(runId))
+    const raw = localStorage.getItem(NAVIGATED_RUN_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+
+    const result: Record<string, string[]> = {}
+    Object.entries(parsed as Record<string, unknown>).forEach(([key, value]) => {
+      if (Array.isArray(value)) result[key] = value.map((item) => String(item))
+    })
+    return result
+  } catch {
+    return {}
+  }
+}
+
+function writeNavigatedRuns(value: Record<string, string[]>) {
+  try {
+    localStorage.setItem(NAVIGATED_RUN_KEY, JSON.stringify(value))
+  } catch {
+    /* 忽略：隐私模式下写不进去，只是会多跳一次 */
+  }
+}
+
+/** 这条运行里已经为哪些文件跳过（老格式下返回通配符，表示「这条运行已跳过」） */
+function navigatedFilesOf(runId: string | number): string[] {
+  const table = readNavigatedRuns()
+  const key = String(runId)
+  if (Array.isArray(table[key])) return table[key]
+  // 兼容旧值：以前这里存的就是 runId 本身
+  try {
+    if (localStorage.getItem(NAVIGATED_RUN_KEY) === key) return ['*']
   } catch {
     /* 忽略 */
   }
+  return []
 }
 
-function hasRunNavigated(runId: string | number) {
-  try {
-    return localStorage.getItem(NAVIGATED_RUN_KEY) === String(runId)
-  } catch {
-    return false
+/** 记下「这条运行的这个文件已经跳过了」 */
+function markFileNavigated(runId: string | number, path: string) {
+  const table = readNavigatedRuns()
+  const key = String(runId)
+  const list = Array.isArray(table[key]) ? table[key] : navigatedFilesOf(runId)
+  const next = list.includes(path) ? list : [...list, path]
+
+  // 重新插入一次让它排到末尾（Map 语义：最近用过的保留）
+  delete table[key]
+  table[key] = next
+
+  const keys = Object.keys(table)
+  if (keys.length > NAVIGATED_RUN_LIMIT) {
+    keys.slice(0, keys.length - NAVIGATED_RUN_LIMIT).forEach((item) => delete table[item])
   }
+  writeNavigatedRuns(table)
 }
 
-/** 任务完成后：把被改动的文件映射成菜单路由并跳过去 */
-function jumpToChangedPage(files: DevAgentChangedFile[], runId?: string | number | null) {
+/**
+ * 运行中：把「这条记录当前已经改到的文件」实时映射成页面并跳过去
+ *
+ * 这是本次体验增强的核心 —— Agent 后台改前端代码时，用户不用等任务跑完，
+ * 界面就会跟着改动的文件跳到对应页面。约束：
+ *   - 只在开启「自动跟随跳转」时生效（开关关掉就退回旧的「结束跳一次」）；
+ *   - 只有新出现的文件才处理（同一个文件在一次运行里只跳一次，避免轮询抖动）；
+ *   - 同一页面重复改动不重复跳；
+ *   - 未登录 / 落在 /login 时由 jumpToChangedPage 直接收起开发模式，不跳（防死循环）。
+ */
+function followChangedPages(record: DevAgentRunRecord) {
+  if (!followJump.value) return
+  const files = Array.isArray(record?.files) ? record.files : []
+  if (!files.length) return
+  jumpToChangedPage(files, record.id, true)
+}
+
+/**
+ * 任务指定的一次跳转：把改动文件映射成菜单路由并跳过去
+ *
+ * @param files      要处理的改动文件
+ * @param runId      所属运行（用于记账；不传则不做记账，用于一次性场景）
+ * @param onlyNew    只处理「这条运行里还没跳过的文件」（运行中的实时跟随用）
+ * @returns 本次实际跳转的页面名，没跳返回 null
+ */
+function jumpToChangedPage(
+  files: DevAgentChangedFile[],
+  runId?: string | number | null,
+  onlyNew = false,
+): string | null {
   const list = Array.isArray(files) ? files : []
-  if (!list.length) return
+  if (!list.length) return null
 
   // 未登录（或已被守卫弹回登录页）时不要再跳，否则会和路由守卫来回打架
   if (!isDevModeAllowed()) {
     closeDevMode()
-    return
+    return null
   }
 
   const hasRunId = runId !== undefined && runId !== null
-  if (hasRunId && hasRunNavigated(runId as string | number)) return
+  const done = hasRunId ? navigatedFilesOf(runId as string | number) : []
+  const pending = onlyNew && hasRunId
+    ? list.filter((file) => {
+        const path = String(file?.path || '')
+        if (!path) return false
+        if (done.includes(path)) return false
+        // 同一个文件在一次运行里只跳一次；同一页面的重复改动也不重复跳
+        const page = resolvePageRoute([file])
+        return !!page && !done.includes(`page:${page.name}`)
+      })
+    : list
 
-  const target = resolvePageRoute(list)
+  if (!pending.length) return null
+
+  const target = resolvePageRoute(pending)
   if (!target) {
     // 改动不在任何菜单页面上（例如只改了后端），保持当前页面
-    MessagePlugin.info(t('devMode.appliedNoMatch'))
-    return
+    if (!onlyNew) MessagePlugin.info(t('devMode.appliedNoMatch'))
+    return null
   }
 
   // 先记账再跳：即使这次跳转被守卫拦下，也不会再重复跳（防死循环）
-  if (hasRunId) markRunNavigated(runId as string | number)
+  if (hasRunId) {
+    const key = runId as string | number
+    pending.forEach((file) => {
+      const path = String(file?.path || '')
+      if (path) markFileNavigated(key, path)
+    })
+    // 同一页面（不同文件落在同一路由）也只跳一次
+    markFileNavigated(key, `page:${target.name}`)
+  }
 
-  MessagePlugin.success(t('devMode.appliedJump', { name: target.name }))
+  MessagePlugin.success(
+    t(onlyNew ? 'devMode.followJumpHint' : 'devMode.appliedJump', { name: target.label }),
+  )
   router.push(`/${target.name}`)
+  return target.name
 }
 
 /**
@@ -1413,6 +1600,8 @@ function pollUntilRunDone(runId: string | number | null, adopted = false) {
         const current = localRecordOf(runId)
         const pending = isRecordRunning(current) || (adopted && !!data?.running)
         if (pending) {
+          // 运行中：只要后端报出「已经改到哪些文件」，就实时跳到对应页面
+          if (current && recordChannel(current) !== 'reply') followChangedPages(current)
           if (Date.now() - waitingSince >= pollMaxWait) {
             // 本次提交超过上限：停止轮询并提示去面板看，避免无限转圈
             stopBusy()
@@ -1447,6 +1636,8 @@ function pollUntilRunDone(runId: string | number | null, adopted = false) {
                   reason: finished.error || t('devMode.exitCodeLabel', { code: finished.exitCode }),
                 }),
           )
+          // 结束时按最终改动列表再对一次账：运行中已经跳过的文件不会重复跳，
+          // 只有「结束时才出现」的改动才在这里补跳（关掉自动跟随时这就是唯一的跳转点）
           if (channelOfRun !== 'reply') jumpToChangedPage(finished.files || [], runId)
         } else {
           setHint(t('devMode.taskEnded'))
@@ -1601,6 +1792,18 @@ function handleToggleMute() {
     releaseSpeechBlobUrl()
   }
   setHint(t(speechMuted.value ? 'devMode.speakOff' : 'devMode.speakOn'))
+}
+
+/**
+ * 自动跟随跳转开关（持久化，默认开）
+ *
+ * 关掉后运行中不再实时跳，只在任务结束时按最终改动列表跳一次 —— 这是旧行为，
+ * 也是「不希望界面自己动」时的降级路径。
+ */
+function handleToggleFollowJump() {
+  followJump.value = !followJump.value
+  saveDevModeFollowJump(followJump.value)
+  setHint(t(followJump.value ? 'devMode.followJumpOn' : 'devMode.followJumpOff'))
 }
 
 /** IndexTTS 是否可用（可达 + 有参考音色）——决定播报走哪个引擎 */
